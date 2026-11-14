@@ -33,10 +33,10 @@ No confirmed real-world sample exists on this machine or in this codebase. Searc
 "usage limit", "usage credits", "limit reached", `rate_limit_event`: **no hits**. The two shapes on record are
 synthetic test fixtures:
 
-- Retryable overload (pause test, `extensions/pause/test/pause.test.ts:379`): *"This request would exceed your
-  account's rate limit. Please try again later."* — Pi retries this one, `pause` catches it.
-- Non-retryable quota (pause test, `pause.test.ts:522`): *"429 You exceeded your current quota
-  (insufficient_quota)"* — pi-ai's classifier excludes `insufficient_quota`, `quota exceeded`, `billing`, `usage
+- Retryable overload (pause test, `extensions/pause/test/pause.test.ts:379`): _"This request would exceed your
+  account's rate limit. Please try again later."_ — Pi retries this one, `pause` catches it.
+- Non-retryable quota (pause test, `pause.test.ts:522`): _"429 You exceeded your current quota
+  (insufficient_quota)"_ — pi-ai's classifier excludes `insufficient_quota`, `quota exceeded`, `billing`, `usage
   limit reached` from retry, so this just fails the run.
 
 **Risk: detection is unverified.** The pattern any implementation watches for has to be built from pi-ai's generic
@@ -75,18 +75,18 @@ practice.
 
 ## Risks and judgement
 
-| Risk | Judgement |
-|---|---|
-| Context > 500K when switching to Sol | Acceptable — 500K-window compaction profile already exists (`server/harness.ts:66-73`), just compacts sooner than on Opus's 1M window |
-| Prompt-cache loss + uncached first turn each switch | Acceptable — same cost `fallback.ts`'s login-fallback already pays today |
-| Tool-id / replay incompatibility across providers | Acceptable — already solved and running in production (`docs/pi-upstream.md`'s tool-id-rewrite patch), proven by `fallback.ts` already moving conversations between claude-code and openai-codex |
-| Flapping back and forth | Acceptable only with a one-shot timer (like `pause`'s autoPlay), not retry-and-probe |
-| A run already mid-turn | Acceptable — hook only fires on new input, same as `fallback.ts`, a run already in flight just fails once |
-| Subscription-to-subscription rule in `fallback.ts` | Not a blocker — both claude-code and openai-codex are marked `isSubscription: true` by Pi, so this switch is exactly what that rule already allows |
-| claude-code README's ToS note on rotating accounts | Not a concern here — that note is about dodging limits by switching *accounts*; this is an ordinary model choice, same as picking Sol by hand in the model picker |
-| Upstream merge conflicts | Avoided — new extension only imports from `fallback.ts`/`pause`, never edits them, and lives in `.ultimate/extensions/` (not core) |
-| **Detection is unverified** (new, from @ultimate's review) | Real risk — no confirmed real Claude quota error text exists anywhere in this codebase or history. First hit should be logged raw and the pattern adjusted from it. Expect one miss. |
-| **Overage billing** (new, from @ultimate's review) | If this is what the error means, it's real money, and switching away is unambiguously correct — the card for this feature should say so plainly when it fires. |
+| Risk                                                       | Judgement                                                                                                                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Context > 500K when switching to Sol                       | Acceptable — 500K-window compaction profile already exists (`server/harness.ts:66-73`), just compacts sooner than on Opus's 1M window                                                            |
+| Prompt-cache loss + uncached first turn each switch        | Acceptable — same cost `fallback.ts`'s login-fallback already pays today                                                                                                                         |
+| Tool-id / replay incompatibility across providers          | Acceptable — already solved and running in production (`docs/pi-upstream.md`'s tool-id-rewrite patch), proven by `fallback.ts` already moving conversations between claude-code and openai-codex |
+| Flapping back and forth                                    | Acceptable only with a one-shot timer (like `pause`'s autoPlay), not retry-and-probe                                                                                                             |
+| A run already mid-turn                                     | Acceptable — hook only fires on new input, same as `fallback.ts`, a run already in flight just fails once                                                                                        |
+| Subscription-to-subscription rule in `fallback.ts`         | Not a blocker — both claude-code and openai-codex are marked `isSubscription: true` by Pi, so this switch is exactly what that rule already allows                                               |
+| claude-code README's ToS note on rotating accounts         | Not a concern here — that note is about dodging limits by switching _accounts_; this is an ordinary model choice, same as picking Sol by hand in the model picker                                |
+| Upstream merge conflicts                                   | Avoided — new extension only imports from `fallback.ts`/`pause`, never edits them, and lives in `.ultimate/extensions/` (not core)                                                               |
+| **Detection is unverified** (new, from @ultimate's review) | Real risk — no confirmed real Claude quota error text exists anywhere in this codebase or history. First hit should be logged raw and the pattern adjusted from it. Expect one miss.             |
+| **Overage billing** (new, from @ultimate's review)         | If this is what the error means, it's real money, and switching away is unambiguously correct — the card for this feature should say so plainly when it fires.                                   |
 
 ## Decisions and picks (agreed, not yet started)
 
