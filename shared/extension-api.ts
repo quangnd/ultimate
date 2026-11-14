@@ -67,6 +67,7 @@ export const inExtensionTests = (path: string) => path.split('/')[1] === extensi
  * the machine behaves. `extensions.enable` in user or project settings turns one on.
  */
 export const defaultOff: readonly string[] = [
+  'brave',
   'cloud',
   'parallel',
   'tailscale',
