@@ -22,12 +22,17 @@ import type { ToolCallView } from '@/sdk'
 
 interface Result {
   url: string
-  title: string | null
+  title: string
   description: string | null
 }
 type Details =
   | { status: 'success'; query: string; results: Result[] }
-  | { status: 'error'; error: string; httpStatus: number | null; quotaExhausted: boolean }
+  | {
+      status: 'error'
+      error: string
+      httpStatus: number | null
+      limitReason: 'quota' | 'credit' | 'rate-limit' | null
+    }
 
 function host(url: string) {
   try {
@@ -107,7 +112,12 @@ function Search({ call }: { call: ToolCallView }) {
           meta={
             <>
               {details?.status === 'success' && <span>{plural(results.length, 'result')}</span>}
-              {failure?.quotaExhausted && <span className="text-error">quota exhausted</span>}
+              {failure?.limitReason === 'quota' && (
+                <span className="text-error">quota used up</span>
+              )}
+              {failure?.limitReason === 'credit' && (
+                <span className="text-error">credit exhausted</span>
+              )}
               {duration && <span>{duration}</span>}
             </>
           }

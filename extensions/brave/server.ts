@@ -68,7 +68,8 @@ export default function brave(host: ExtensionHost) {
           try {
             const count = args.count ?? DEFAULT_COUNT
             const response = await braveSearch(args.query, count, context.abortSignal, await key())
-            const results = summarize(response.web?.results ?? [])
+            // `web` and `web.results` are documented nullable: null and absent both mean no web results.
+            const results = summarize(response.web?.results)
             const details = { status: 'success' as const, query: args.query, results }
             await api.details(details, context)
             const text = results.length
@@ -100,15 +101,15 @@ function failure(error: unknown) {
       status: 'error' as const,
       error: text,
       httpStatus: error instanceof BraveApiError ? (error.status ?? null) : null,
-      quotaExhausted: error instanceof BraveApiError ? error.quotaExhausted : false,
+      limitReason: error instanceof BraveApiError ? (error.limitReason ?? null) : null,
     },
     output: { isError: true, output: [{ type: 'text' as const, text }] },
   }
 }
-function summarize(results: BraveResultItem[]) {
-  return results.slice(0, MAX_COUNT).map((item) => ({
+function summarize(results: BraveResultItem[] | null | undefined) {
+  return (results ?? []).slice(0, MAX_COUNT).map((item) => ({
     url: item.url.slice(0, 2048),
-    title: item.title?.slice(0, 500) ?? null,
+    title: item.title.slice(0, 500),
     description: item.description ? truncateResultText(item.description) : null,
   }))
 }

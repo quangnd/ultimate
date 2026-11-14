@@ -120,12 +120,51 @@ it('treats a response without a web key as no results, not an error', async () =
   expect(JSON.stringify(output)).toContain('No results for')
 })
 
+it('treats a documented-nullable web (null) and web.results (null) as no results, not an error', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  for (const data of [
+    { type: 'search', web: null },
+    { type: 'search', web: { results: null } },
+  ]) {
+    await fake(() => ({ data }))
+    const output = await f.run({ query: 'q' })
+    expect(output).not.toHaveProperty('isError')
+    expect(JSON.stringify(output)).toContain('No results for')
+  }
+})
+
+it('treats a documented-nullable result description (null or absent) as no description, not an error', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  await fake(() => ({
+    data: {
+      type: 'search',
+      web: {
+        results: [
+          { title: 'No description field', url: 'https://example.com/a' },
+          { title: 'Null description', url: 'https://example.com/b', description: null },
+        ],
+      },
+    },
+  }))
+  const output = await f.run({ query: 'q' })
+  expect(output).not.toHaveProperty('isError')
+  expect(f.details.mock.calls[0][0]).toMatchObject({
+    results: [
+      { url: 'https://example.com/a', title: 'No description field', description: null },
+      { url: 'https://example.com/b', title: 'Null description', description: null },
+    ],
+  })
+})
+
 it('rejects a malformed response shape as an error', async () => {
   const f = await fixture()
   await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
   for (const data of [
     {},
     { type: 'search', web: { results: [{ title: 'no url' }] } },
+    { type: 'search', web: { results: [{ url: 'https://example.com', title: 123 }] } },
     { type: 'search', web: 'broken' },
     [],
   ]) {
@@ -150,7 +189,7 @@ it('maps 401/403 as rejected credentials with an actionable message', async () =
   const f = await fixture()
   await writeSecret(f.root, 'BRAVE_API_KEY', 'secret-sentinel')
   for (const status of [401, 403]) {
-    await fake(() => ({ status, data: { error: { message: 'invalid' } } }))
+    await fake(() => ({ status, data: { error: { code: 'SUBSCRIPTION_TOKEN_INVALID' } } }))
     const output = await f.run({ query: 'test' })
     expect(output).toHaveProperty('isError', true)
     const text = JSON.stringify(output)
@@ -159,7 +198,52 @@ it('maps 401/403 as rejected credentials with an actionable message', async () =
   }
 })
 
-it('maps a plain 429 as a temporary rate limit, not quota exhaustion, without the monthly header', async () => {
+it('maps error.code SUBSCRIPTION_NOT_FOUND as rejected credentials regardless of HTTP status', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  await fake(() => ({ status: 422, data: { error: { code: 'SUBSCRIPTION_NOT_FOUND' } } }))
+  const output = await f.run({ query: 'test' })
+  expect(JSON.stringify(output)).toContain('rejected')
+})
+
+it('maps error.code QUOTA_LIMITED as the monthly request quota, not credit or a temporary rate limit', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  await fake(() => ({ status: 429, data: { error: { code: 'QUOTA_LIMITED' } } }))
+  const output = await f.run({ query: 'test' })
+  const text = JSON.stringify(output)
+  expect(text).toContain('quota')
+  expect(text).not.toContain('credit')
+  expect(f.details.mock.calls[0][0]).toMatchObject({ limitReason: 'quota' })
+})
+
+it('maps error.code CREDIT_EXHAUSTED as prepaid/free credit, distinct from the request quota', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  await fake(() => ({ status: 429, data: { error: { code: 'CREDIT_EXHAUSTED' } } }))
+  const output = await f.run({ query: 'test' })
+  const text = JSON.stringify(output)
+  expect(text).toContain('credit')
+  expect(text).not.toContain('quota')
+  expect(f.details.mock.calls[0][0]).toMatchObject({ limitReason: 'credit' })
+})
+
+it('maps error.code RATE_LIMITED as temporary even with a monthly-exhausted header, trusting the code over the header', async () => {
+  const f = await fixture()
+  await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
+  await fake(() => ({
+    status: 429,
+    data: { error: { code: 'RATE_LIMITED' } },
+    headers: { 'x-ratelimit-remaining': '0, 0' },
+  }))
+  const output = await f.run({ query: 'test' })
+  const text = JSON.stringify(output)
+  expect(text).toContain('rate limit')
+  expect(text).not.toContain('quota')
+  expect(f.details.mock.calls[0][0]).toMatchObject({ limitReason: 'rate-limit' })
+})
+
+it('without an error.code, falls back to the rate-limit header only as supporting evidence: a plain 429 is temporary', async () => {
   const f = await fixture()
   await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
   await fake(() => ({ status: 429, data: {} }))
@@ -167,17 +251,18 @@ it('maps a plain 429 as a temporary rate limit, not quota exhaustion, without th
   const text = JSON.stringify(output)
   expect(text).toContain('rate limit')
   expect(text).not.toContain('quota')
-  expect(f.details.mock.calls[0][0]).toMatchObject({ quotaExhausted: false })
+  expect(f.details.mock.calls[0][0]).toMatchObject({ limitReason: 'rate-limit' })
 })
 
-it('maps a 429 with X-RateLimit-Remaining reporting 0 for the month as quota exhausted', async () => {
+it('without an error.code, a 429 with X-RateLimit-Remaining reporting 0 for the month is reported as quota, hedged', async () => {
   const f = await fixture()
   await writeSecret(f.root, 'BRAVE_API_KEY', 'key')
   await fake(() => ({ status: 429, data: {}, headers: { 'x-ratelimit-remaining': '1, 0' } }))
   const output = await f.run({ query: 'test' })
   const text = JSON.stringify(output)
-  expect(text).toContain('quota is exhausted')
-  expect(f.details.mock.calls[0][0]).toMatchObject({ quotaExhausted: true })
+  expect(text).toContain('quota')
+  expect(text).toContain('appears exhausted')
+  expect(f.details.mock.calls[0][0]).toMatchObject({ limitReason: 'quota' })
 })
 
 it('never forwards a non-JSON HTTP error body, redacting the key if echoed', async () => {
@@ -189,10 +274,10 @@ it('never forwards a non-JSON HTTP error body, redacting the key if echoed', asy
   expect(JSON.stringify(output)).not.toMatch(/secret-sentinel|confidential/)
 })
 
-it('redacts the key from a JSON error body it echoes', async () => {
+it('redacts the key from a JSON error body (error.detail) it echoes', async () => {
   const f = await fixture()
   await writeSecret(f.root, 'BRAVE_API_KEY', 'secret-sentinel')
-  await fake(() => ({ status: 500, data: { error: { message: 'bad token secret-sentinel' } } }))
+  await fake(() => ({ status: 500, data: { error: { detail: 'bad token secret-sentinel' } } }))
   const output = await f.run({ query: 'test' })
   const text = JSON.stringify(output)
   expect(text).toContain('[redacted]')
