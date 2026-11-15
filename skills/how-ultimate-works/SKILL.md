@@ -63,7 +63,7 @@ Remember the answer: it goes into the memory about the user at setup.
 
 - What I learn about the project lives in its **memory**: decisions, facts and lessons that every new branch starts
   from.
-- I'm meant to run long and fill my context. Around 70% (or whenever you tell me to dream) I write a handoff and
+- I'm meant to run long and fill my context. Around 55% (or whenever you tell me to dream) I write a handoff and
   start a **dream**: a review
   of what went well and badly that proposes memory changes and improvements to me, and what to build for this project
   where I keep doing the same thing by hand ("this happened in 6 branches: shall we build a tool here?"). You decide

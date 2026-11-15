@@ -1,6 +1,6 @@
 /**
  * The two built-in dream triggers, ordinary context automations that wake @ultimate: "Dream before compaction" when its
- * context passes 70%, and "Dream after a pause" at 50% once the user has been away 8 hours. Dream makes each once per
+ * context passes 55%, and "Dream after a pause" at 35% once the user has been away 8 hours. Dream makes each once per
  * chapter, so the user sees them in the Automations panel and can pause, delete or re-threshold them like any other;
  * a new chapter makes them again as the seed carried them. A fire leaves a `dream.requested` entry beside the
  * automation's own wake-up, which says what a dream is and where its workflow lives.
@@ -21,16 +21,16 @@ import type { Seed } from './types.ts'
 /** The built-in automation's name, shown in the Automations panel. */
 export const AUTOMATION_NAME = 'Dream before compaction'
 /** Its trigger as dream first makes it; the user may change the threshold. */
-export const CONDITION = { metric: 'context' as const, of: '@ultimate', above: 70 }
+export const CONDITION = { metric: 'context' as const, of: '@ultimate', above: 55 }
 /**
- * The second built-in: after a long pause with @ultimate half full, dream while the user is away. At 8 hours keep-warm
+ * The second built-in: after a long pause with @ultimate a third full, dream while the user is away. At 8 hours keep-warm
  * has just renewed the prompt cache, so the dream's handoff reads it instead of rewriting it.
  */
 export const PAUSE_NAME = 'Dream after a pause'
 export const PAUSE_CONDITION = {
   metric: 'context' as const,
   of: '@ultimate',
-  above: 50,
+  above: 35,
   idleFor: 8 * 3600_000,
 }
 
