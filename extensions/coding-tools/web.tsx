@@ -505,7 +505,7 @@ function Control() {
           tools
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-1 font-mono" side="top">
+      <PopoverContent align="end" className="w-80 p-1 font-mono" side="top">
         <label className="flex cursor-pointer items-center justify-between gap-3 px-2 py-1.5 text-[12px]">
           Show file content while writing
           <Switch checked={show} onCheckedChange={setShow} />
