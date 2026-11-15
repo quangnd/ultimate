@@ -1,3 +1,4 @@
+import { deadline } from '../../lib/timers.ts'
 import { ArrowUpIcon, LoaderCircleIcon, MicIcon, SquareIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -16,6 +17,7 @@ import {
   useNow,
 } from '@/sdk'
 import type { UltimateContext } from '@/sdk'
+import { meansNone } from '../../lib/errors.ts'
 import { StatusAction, TranscribeAction } from './refs.ts'
 
 /** Recordings stop on their own here: well under the 8 MB the server takes at any browser's bitrate. */
@@ -211,8 +213,7 @@ function VoiceButton() {
   }, [now, recording])
   useEffect(() => {
     if (!error) return undefined
-    const timer = setTimeout(() => setError(undefined), 8000)
-    return () => clearTimeout(timer)
+    return deadline(8000, () => setError(undefined))
   }, [error])
 
   function finish(active: Recording | undefined, cancel: boolean, send = false) {
@@ -281,17 +282,14 @@ function VoiceButton() {
     })
     recorder.addEventListener('stop', () => {
       for (const track of stream.getTracks()) track.stop()
-      // Closing only frees the meter's audio graph; a failure leaves nothing to clean up.
-      audio?.close().catch(() => undefined)
+      audio?.close().catch(meansNone)
       if (active.cancelled || active.chunks.length === 0) return
-      // oxlint-disable-next-line typescript/no-floating-promises -- transcribe shows its own failures beside the button.
       void transcribe(
         new Blob(active.chunks, { type: recorder.mimeType || type || 'audio/webm' }),
         active.send,
       )
     })
-    // Created after awaiting the permission prompt, it may start suspended (Safari): the meter would read silence.
-    audio?.resume().catch(() => undefined)
+    audio?.resume().catch(meansNone)
     recorder.start(1000)
     setRecording(active)
   }
@@ -309,7 +307,6 @@ function VoiceButton() {
     if (recording) return finish(recording, false)
     if (missingKey) return events.emit('secrets:open', { name: 'OPENAI_API_KEY' })
     if (blocked) return setError(blocked)
-    // oxlint-disable-next-line typescript/no-floating-promises -- start shows its own failures beside the button.
     void start()
   }
   // A ref holds the latest toggle (it closes over this render's state); the map entry stays the same object across
