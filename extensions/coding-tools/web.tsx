@@ -128,7 +128,6 @@ function useFollow<T extends HTMLElement>(following: boolean, content: unknown) 
   return ref
 }
 
-/** Whether a streaming write or edit shows its content as it is written; off, its header alone shows the status. */
 const useShowWriting = () => useExtensionUiState('showWriting', false)
 
 /** A file call's title: its path, or a shimmering verb until the model has written the path. */
@@ -143,10 +142,10 @@ function Write({ call }: { call: ToolCallView }) {
   const duration = useToolDuration(call)
   const failed = call.status === 'error'
   const streaming = call.status === 'streaming'
-  // With the setting on, open while it streams in, so the file appears as it is written, and it stays open rather
-  // than jump shut when the write lands; a write first seen finished starts closed.
   const [show] = useShowWriting()
-  const [watched] = useState(streaming)
+  // Set once the content has been on show, so the card stays open rather than jump shut when the write lands.
+  const [watched, setWatched] = useState(false)
+  if (show && streaming && !watched) setWatched(true)
   const [toggled, setToggled] = useState<boolean>()
   const open = toggled ?? (failed || (show && (watched || streaming)))
   const scroller = useFollow<HTMLDivElement>(streaming, content)
@@ -209,7 +208,6 @@ function Edit({ call }: { call: ToolCallView }) {
   const failed = call.status === 'error'
   const [show] = useShowWriting()
   const [toggled, setToggled] = useState<boolean>()
-  // Closed while it streams in, unless the setting shows the diff growing; once written it opens, as an edit always did.
   const open = toggled ?? (show || !streaming)
   const scroller = useFollow<HTMLDivElement>(streaming, rows.length)
   return (
@@ -490,7 +488,6 @@ function BashLine({ call }: { call: ToolCallView }) {
   )
 }
 
-/** The status-bar entry for how tool calls show: whether a file streams in as the model writes it. */
 function Control() {
   const [show, setShow] = useShowWriting()
   return (
