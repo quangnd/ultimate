@@ -1,9 +1,11 @@
 // Pi upstream: @earendil-works/pi-durable@1.5.2 src/tools/bash.ts and src/tools/edit.ts — internal bash exit_code diagnostic message drives exitOf and untyped details.patch/details.diff drive Edit. Drop when Pi exports structured bash outcomes and structured diff rows for rendering.
-import { XIcon } from 'lucide-react'
+import { WrenchIcon, XIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnsiOutput } from '@/components/ai/ansi-output'
 import { Shimmer } from '@/components/ai/shimmer'
 import { CodeBlock, languageFromPath } from '@/components/ai/code-block'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Switch } from '@/components/ui/switch'
 import {
   Tool,
   ToolContent,
@@ -20,6 +22,7 @@ import {
   formatBytes,
   shortenPath,
   useConversation,
+  useExtensionUiState,
   useStore,
   useToolDuration,
 } from '@/sdk'
@@ -125,6 +128,9 @@ function useFollow<T extends HTMLElement>(following: boolean, content: unknown) 
   return ref
 }
 
+/** Whether a streaming write or edit shows its content as it is written; off, its header alone shows the status. */
+const useShowWriting = () => useExtensionUiState('showWriting', false)
+
 /** A file call's title: its path, or a shimmering verb until the model has written the path. */
 function FileTitle({ path, verb }: { path: string; verb: string }) {
   const shown = usePath(path)
@@ -137,11 +143,12 @@ function Write({ call }: { call: ToolCallView }) {
   const duration = useToolDuration(call)
   const failed = call.status === 'error'
   const streaming = call.status === 'streaming'
-  // Open while it streams in, so the file appears as it is written, and it stays open rather than jump shut when
-  // the write lands; a write first seen finished starts closed.
+  // With the setting on, open while it streams in, so the file appears as it is written, and it stays open rather
+  // than jump shut when the write lands; a write first seen finished starts closed.
+  const [show] = useShowWriting()
   const [watched] = useState(streaming)
   const [toggled, setToggled] = useState<boolean>()
-  const open = toggled ?? (watched || streaming || failed)
+  const open = toggled ?? (failed || (show && (watched || streaming)))
   const scroller = useFollow<HTMLDivElement>(streaming, content)
   return (
     <Tool onOpenChange={setToggled} open={open}>
@@ -200,9 +207,13 @@ function Edit({ call }: { call: ToolCallView }) {
   // Counts only once the model has written the whole call: mid-stream they would still change.
   const { added, removed } = countChanges(streaming ? [] : rows)
   const failed = call.status === 'error'
+  const [show] = useShowWriting()
+  const [toggled, setToggled] = useState<boolean>()
+  // Closed while it streams in, unless the setting shows the diff growing; once written it opens, as an edit always did.
+  const open = toggled ?? (show || !streaming)
   const scroller = useFollow<HTMLDivElement>(streaming, rows.length)
   return (
-    <Tool defaultOpen>
+    <Tool onOpenChange={setToggled} open={open}>
       <ToolHeader
         meta={
           <>
@@ -479,7 +490,36 @@ function BashLine({ call }: { call: ToolCallView }) {
   )
 }
 
+/** The status-bar entry for how tool calls show: whether a file streams in as the model writes it. */
+function Control() {
+  const [show, setShow] = useShowWriting()
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          aria-label="Tool cards"
+          className="-mx-1 flex cursor-pointer items-center gap-1.5 rounded-sm px-1 transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+          type="button"
+        >
+          <WrenchIcon className="size-3" />
+          tools
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-1 font-mono" side="top">
+        <label className="flex cursor-pointer items-center justify-between gap-3 px-2 py-1.5 text-[12px]">
+          Show file content while writing
+          <Switch checked={show} onCheckedChange={setShow} />
+        </label>
+        <div className="px-2 pt-0.5 pb-1 text-[11px] leading-4 text-muted-foreground">
+          Off: a write or edit shows only its status until it is done; tap its header to open it.
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default defineWebExtension({
+  slots: { 'statusline.right': [{ component: Control, order: -1 }] },
   tools: { read: Read, write: Write, edit: Edit, bash: Bash },
   toolLines: {
     read: ReadLine,

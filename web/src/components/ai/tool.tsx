@@ -39,7 +39,7 @@ const labels: Record<ToolState, string> = {
 }
 
 const icons = {
-  streaming: [CircleDashedIcon, 'text-muted-foreground'],
+  streaming: [CircleDashedIcon, 'animate-spin text-brand'],
   pending: [CircleDashedIcon, 'text-muted-foreground'],
   running: [LoaderCircleIcon, 'animate-spin text-brand'],
   done: [CheckIcon, 'text-success'],
