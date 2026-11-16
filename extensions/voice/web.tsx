@@ -1,5 +1,5 @@
 import { deadline } from '../../lib/timers.ts'
-import { ArrowUpIcon, LoaderCircleIcon, MicIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, CheckIcon, LoaderCircleIcon, MicIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -23,6 +23,11 @@ import { ShortcutAction, StatusAction, TranscribeAction } from './refs.ts'
 const uploadSafeRecordingMs = 5 * 60_000
 
 const recordingMimeOrder = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
+
+const hideWhileRecording = `[data-ui="composer"]:has([data-voice-recording]) :is(button[type="submit"], [data-voice-live]) { display: none }`
+
+const actionButton =
+  'flex size-7 items-center justify-center rounded-lg pointer-coarse:relative pointer-coarse:size-9 pointer-coarse:after:absolute pointer-coarse:after:-inset-1'
 
 const defaultShortcut = 'mod+alt+v'
 let toggleShortcut = defaultShortcut
@@ -311,7 +316,13 @@ function VoiceButton() {
 
   if (recording)
     return (
-      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Recording">
+      <div
+        className="flex shrink-0 items-center gap-1"
+        data-voice-recording
+        role="group"
+        aria-label="Recording"
+      >
+        <style>{hideWhileRecording}</style>
         <button
           aria-label="Cancel recording"
           className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-9"
@@ -328,18 +339,18 @@ function VoiceButton() {
           <Level audio={recording.audio} stream={recording.stream} />
         </span>
         <button
-          aria-label="Stop and transcribe"
-          className="flex size-7 items-center justify-center rounded-lg bg-error text-white hover:bg-error/90 pointer-coarse:size-9"
+          aria-label="Done: put the transcript in the composer"
+          className={cn(actionButton, 'text-foreground hover:bg-accent')}
           onClick={() => finish(recording, false)}
           onPointerDown={keepEditorFocus}
-          title="Stop and transcribe"
+          title="Done: transcribe into the composer"
           type="button"
         >
-          <SquareIcon className="size-3 fill-current" />
+          <CheckIcon className="size-4" />
         </button>
         <button
           aria-label="Send"
-          className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 pointer-coarse:size-9"
+          className={cn(actionButton, 'bg-primary text-primary-foreground hover:bg-primary/90')}
           onClick={() => finish(recording, false, true)}
           onPointerDown={keepEditorFocus}
           title="Send (Enter)"
