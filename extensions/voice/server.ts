@@ -3,11 +3,13 @@ import type { ExtensionHost } from '../../server/extensions.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { openaiError } from '../../lib/openai.ts'
 import { readSecret } from '../../lib/secrets.ts'
-import { StatusAction, TranscribeAction } from './refs.ts'
+import { readSettings, userSettingsPath } from '../../lib/settings.ts'
+import { ShortcutAction, StatusAction, TranscribeAction } from './refs.ts'
 
 const SECRET = 'OPENAI_API_KEY'
 const NO_KEY = `Voice needs an OpenAI API key: add ${SECRET} in ⌘K → Secrets`
 const TIMEOUT_MS = 65_000
+const SHORTCUT = /^(?:shift\+)*(?:mod|ctrl|alt)\+(?:(?:mod|ctrl|alt|shift)\+)*[a-z0-9]$/i
 
 const action12MbAudioLimit = 8 * 1024 * 1024
 export { action12MbAudioLimit as MAX_AUDIO_BYTES }
@@ -82,6 +84,18 @@ export const actions = {
       ? { available: true as const }
       : { available: false as const, reason: NO_KEY },
   ),
+
+  shortcut: implementAction(ShortcutAction, async (_args, { host }) => {
+    const { voice } = await readSettings(userSettingsPath(host.userHome))
+    const chosen =
+      voice && typeof voice === 'object' && !Array.isArray(voice) ? voice.shortcut : undefined
+    if (chosen === undefined) return null
+    if (typeof chosen !== 'string' || !SHORTCUT.test(chosen))
+      throw new Error(
+        'voice.shortcut in ~/.ultimate/settings.json must be one chord with mod, alt or ctrl, such as "mod+alt+v"; the default is used',
+      )
+    return chosen.toLowerCase()
+  }),
 
   transcribe: implementAction(TranscribeAction, async (args, { host, signal }) => {
     const { audio, mimeType } = args && typeof args === 'object' && !Array.isArray(args) ? args : {}

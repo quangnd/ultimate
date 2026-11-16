@@ -18,14 +18,19 @@ import {
 } from '@/sdk'
 import type { UltimateContext } from '@/sdk'
 import { meansNone } from '../../lib/errors.ts'
-import { StatusAction, TranscribeAction } from './refs.ts'
+import { ShortcutAction, StatusAction, TranscribeAction } from './refs.ts'
 
 const uploadSafeRecordingMs = 5 * 60_000
 
 const recordingMimeOrder = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
 
-const toggleShortcut = 'mod+shift+v'
-const toggleShortcutHint = formatKeys(toggleShortcut)[0].join('')
+const defaultShortcut = 'mod+alt+v'
+let toggleShortcut = defaultShortcut
+
+function shortcutHint(keys: string) {
+  const parts = formatKeys(keys)[0]
+  return parts.join(parts.every((part) => part.length === 1) ? '' : '+')
+}
 
 type VoiceControls = { toggle: () => void; cancel: () => void; recording: boolean }
 const controlsByConversation = new Map<number, VoiceControls>()
@@ -165,6 +170,9 @@ function Level({ audio, stream }: { audio?: AudioContext; stream: MediaStream })
 function VoiceButton() {
   const { id } = useConversation()
   const status = useAction(StatusAction)
+  const shortcut = useAction(ShortcutAction)
+  const chosenShortcut = shortcut.data ?? defaultShortcut
+  if (!shortcut.loading) toggleShortcut = chosenShortcut
   useEvent('secrets:changed', () => void status.refetch())
   const [recording, setRecording] = useState<Recording>()
   const [transcribing, setTranscribing] = useState(false)
@@ -379,7 +387,8 @@ function VoiceButton() {
           </button>
         </TooltipTrigger>
         <TooltipContent>
-          {blocked ?? `Voice input: tap to record, tap again to transcribe · ${toggleShortcutHint}`}
+          {blocked ??
+            `Voice input: tap to record, tap again to transcribe · ${shortcutHint(chosenShortcut)}`}
         </TooltipContent>
       </Tooltip>
     </div>
@@ -392,7 +401,9 @@ export default defineWebExtension({
     {
       id: 'voice.toggle',
       title: 'Voice input: start / stop recording',
-      keys: toggleShortcut,
+      get keys() {
+        return toggleShortcut
+      },
       whileTyping: true,
       when: (context) => composerOffersVoice(context),
       run: (context) => toggleVoice(context),

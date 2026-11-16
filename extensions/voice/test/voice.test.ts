@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { actions, MAX_AUDIO_BYTES } from '../server.ts'
 import { writeSecret } from '../../secrets/store.ts'
+import { updateSettings, userSettingsPath } from '../../../lib/settings.ts'
 import type { ActionContext } from '../../../server/actions.ts'
 import { removeTemp, temp } from '../../../test/helpers.ts'
 
@@ -110,4 +111,27 @@ it('reports a provider failure with its status, and an answer without text', asy
   await expect(actions.transcribe(audio, ctx)).rejects.toThrow(
     'Transcription failed (HTTP 502): no text in the answer',
   )
+})
+
+async function withShortcut(value: unknown) {
+  const ctx = await context()
+  await updateSettings(
+    userSettingsPath((ctx.host as { userHome: string }).userHome),
+    (settings) => {
+      settings.voice = { shortcut: value as string }
+    },
+  )
+  return ctx
+}
+
+it('shortcut reads voice.shortcut from the user settings, lowercased, and is null when unset', async () => {
+  expect(await actions.shortcut(null, await context())).toBeNull()
+  expect(await actions.shortcut(null, await withShortcut('Mod+Alt+J'))).toBe('mod+alt+j')
+})
+
+it('shortcut rejects a chord that would fire while the user types', async () => {
+  for (const value of ['v', 'shift+v', 'mod+k m', 'mod+alt', 7])
+    await expect(actions.shortcut(null, await withShortcut(value))).rejects.toThrow(
+      'voice.shortcut in ~/.ultimate/settings.json must be one chord',
+    )
 })

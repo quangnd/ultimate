@@ -2,8 +2,8 @@ Voice input: a mic button beside Send records speech and puts its transcript int
 
 ## How it works
 
-- **Tap to record, tap to stop**, or `mod+shift+v` (the `voice.toggle` command): the shortcut drives the same
-  recorder the button does, works while typing in the composer, and is hidden where no composer offers voice. While
+- **Tap to record, tap to stop**, or `mod+alt+v` (the `voice.toggle` command; ⌘⌥V on a Mac): the shortcut drives the
+  same recorder the button does, works while typing in the composer, and is hidden where no composer offers voice. While
   recording the button becomes Cancel, an elapsed clock with a level meter, Stop, and Send; Escape cancels while
   idle, and Enter sends (only in that conversation's own composer). Stop transcribes and inserts the text at the
   cursor, unsent, for editing, so a busy conversation steers or queues it like typed text once sent. Send does the
@@ -19,6 +19,12 @@ Voice input: a mic button beside Send records speech and puts its transcript int
 - **Key:** the `OPENAI_API_KEY` secret (⌘K → Secrets), else an API key Pi's `openai` provider holds. The key is never
   logged or returned. Without one, `status` answers `{ available: false, reason }`, the button is dimmed, and tapping it
   opens the secret's row in the Secrets panel.
+
+To use another chord, set `voice.shortcut` in `~/.ultimate/settings.json`, for example
+`{ "voice": { "shortcut": "mod+alt+j" } }`, and reload the page. It must be one chord with `mod`, `alt` or `ctrl`
+plus a letter or digit (`mod` is ⌘ on macOS, Ctrl elsewhere); anything else shows a notice and the default stays. The
+`shortcut` action (`null` → the chord, or `null` when unset) is how the browser reads it. The default avoids the
+browser's paste-as-plain-text, `mod+shift+v`.
 
 The ChatGPT login (`openai-codex`) cannot transcribe from a server: `chatgpt.com/backend-api/transcribe` answers every
 non-browser request with a Cloudflare challenge (bb hits the same wall), so voice uses the API key instead.

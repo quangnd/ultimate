@@ -36,7 +36,9 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    - upstream restructured the area: re-port our intent onto the new code;
    - unrelated: keep both;
    - unsure: ask the user with a card, naming the memory and the two options.
-3. Expected conflict spots: `extensions/voice/web.tsx` (until upstream takes the voice shortcut and Send) and the
+3. Expected conflict spots: `extensions/voice/` (`web.tsx`, `server.ts`, `refs.ts`, README and tests: the voice shortcut
+   `mod+alt+v` with the `voice.shortcut` user setting, and Send; upstream declined PR #195, so this carry is permanent)
+   and the
    7-line fix in `extensions/codemode/test/codemode.test.ts` (until upstream takes it). In
    `.ultimate/settings.json`, keep `lander.checks` as ours: the machine sets those numbers (`diverge-lander-checks`).
    The collapsed write/edit cards (`~/.ultimate/extensions/tool-cards`), the reviewer-architecture thinking

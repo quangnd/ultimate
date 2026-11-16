@@ -11,3 +11,5 @@ export const TranscribeAction = actionRef<{ audio: string; mimeType: string }, {
   'voice',
   'transcribe',
 )
+/** No arguments → the `voice.shortcut` key of the user's settings (a chord such as `mod+alt+v`), or null when unset. Fails when the value is not one chord with `mod`, `alt` or `ctrl`. */
+export const ShortcutAction = actionRef<null, string | null>('voice', 'shortcut')

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import { spliced } from '../../../../web/src/app/queued.ts'
 
-const status = vi.hoisted(() => ({ data: undefined as unknown }))
+const status = vi.hoisted(() => ({ data: undefined as unknown, shortcut: null as string | null }))
 const busy = vi.hoisted(() => ({ value: false }))
 vi.mock('@/sdk', () => ({
   api: {},
@@ -15,7 +15,11 @@ vi.mock('@/sdk', () => ({
   formatKeys: (keys: string) => [keys.split('+').map((part) => part.toUpperCase())],
   getConversation: () => ({ busy: busy.value }),
   insertIntoComposer: () => {},
-  useAction: () => ({ data: status.data, loading: false, refetch: async () => undefined }),
+  useAction: (ref: { name: string }) => ({
+    data: ref.name === 'shortcut' ? status.shortcut : status.data,
+    loading: false,
+    refetch: async () => undefined,
+  }),
   useConversation: () => ({ id: 7 }),
   useEvent: () => {},
   useNow: () => 0,
@@ -23,7 +27,7 @@ vi.mock('@/sdk', () => ({
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: unknown }) => children,
   TooltipTrigger: ({ children }: { children: unknown }) => children,
-  TooltipContent: () => null,
+  TooltipContent: ({ children }: { children: unknown }) => children,
 }))
 
 async function button(data: unknown) {
@@ -41,6 +45,7 @@ async function button(data: unknown) {
 
 type Command = {
   id: string
+  keys?: string
   when?: (context: { conversationId?: number }) => boolean
   run: (context: { conversationId?: number }) => void
 }
@@ -115,6 +120,20 @@ it('voice.toggle is hidden once no button is mounted for that conversation, or t
   expect(toggle.when?.({ conversationId: undefined })).toBe(false)
   withdraw()
   expect(toggle.when?.({ conversationId: 7 })).toBe(false)
+  restore()
+})
+
+it('voice.toggle listens on the chosen shortcut, and on ⌘⌥V by default', async () => {
+  const { commands: list, restore } = await commands()
+  const toggle = commands_find(list, 'voice.toggle')
+  expect(toggle.keys).toBe('mod+alt+v')
+  status.shortcut = 'mod+alt+j'
+  const html = await button({ available: true })
+  expect(toggle.keys).toBe('mod+alt+j')
+  expect(html).toContain('MOD+ALT+J')
+  status.shortcut = null
+  await button({ available: true })
+  expect(toggle.keys).toBe('mod+alt+v')
   restore()
 })
 
