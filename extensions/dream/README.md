@@ -25,7 +25,7 @@ A dream is ordinary work; code keeps only which branch is the dream, so its end 
 ### Built-in triggers
 
 Dream ships two ordinary context automations that subscribe @ultimate (`built-ins.ts`): **Dream before compaction**
-(`condition {metric: 'context', of: '@ultimate', above: 55}`) and **Dream after a pause** (`above: 35, idleFor:
+(`condition {metric: 'context', of: '@ultimate', above: 70}`) and **Dream after a pause** (`above: 50, idleFor:
 8 h`; at 8 hours keep-warm has just renewed the prompt cache, so the handoff reads it instead of rewriting it). Each
 is made once per chapter when the harness opens or @ultimate first starts; their ids are kept in
 `dream.after-compaction` and `dream.after-pause` on conversation 1. They show in the Automations panel like any other:

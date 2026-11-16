@@ -167,13 +167,13 @@ it('ships both built-in triggers, each waking @ultimate, and keeps a deletion', 
   expect(await f.record(id)).toMatchObject({
     name: AUTOMATION_NAME,
     enabled: true,
-    condition: { metric: 'context', of: '@ultimate', above: 55, armed: true },
+    condition: { metric: 'context', of: '@ultimate', above: 70, armed: true },
     subscribers: ['@ultimate'],
   })
   expect(await f.record(pause)).toMatchObject({
     name: PAUSE_NAME,
     enabled: true,
-    condition: { of: '@ultimate', above: 35, idleFor: 8 * 3600_000 },
+    condition: { of: '@ultimate', above: 50, idleFor: 8 * 3600_000 },
     subscribers: ['@ultimate'],
   })
   // Opening again (a facet reload, a restart) makes no second one.

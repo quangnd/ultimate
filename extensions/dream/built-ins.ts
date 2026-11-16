@@ -12,13 +12,13 @@ import type { RequestedEntry } from './refs.ts'
 import type { Seed } from './types.ts'
 
 export const AUTOMATION_NAME = 'Dream before compaction'
-export const CONDITION = { metric: 'context' as const, of: '@ultimate', above: 55 }
+export const CONDITION = { metric: 'context' as const, of: '@ultimate', above: 70 }
 export const PAUSE_NAME = 'Dream after a pause'
 const IDLE_WITH_RENEWED_KEEP_WARM_CACHE_MS = 8 * 3600_000
 export const PAUSE_CONDITION = {
   metric: 'context' as const,
   of: '@ultimate',
-  above: 35,
+  above: 50,
   idleFor: IDLE_WITH_RENEWED_KEEP_WARM_CACHE_MS,
 }
 function discardLegacySeedDeletion(value: unknown) {

@@ -21,8 +21,8 @@ A dream starts when it is asked for, all the same way:
 
 - the user tells you to dream ("start dreaming", "let's dream", "time for a dream");
 - the user pressed Dream (a `dream.requested` input);
-- a built-in automation fired: "Dream before compaction" when your context passed its threshold (55% by default), or
-  "Dream after a pause" at 35% after the user was away 8 hours (its fire wakes you, and a `dream.requested` entry
+- a built-in automation fired: "Dream before compaction" when your context passed its threshold (70% by default), or
+  "Dream after a pause" at 50% after the user was away 8 hours (its fire wakes you, and a `dream.requested` entry
   beside it carries the ask).
 
 If a dream branch is already running, say so in one line and do nothing else. Otherwise, in that same turn, while your

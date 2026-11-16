@@ -36,10 +36,13 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    - upstream restructured the area: re-port our intent onto the new code;
    - unrelated: keep both;
    - unsure: ask the user with a card, naming the memory and the two options.
-3. Expected conflict spots: `extensions/voice/web.tsx` and the two numbers in `extensions/dream/built-ins.ts`. In
+3. Expected conflict spots: `extensions/voice/web.tsx` (until upstream takes the voice shortcut and Send) and the
+   7-line fix in `extensions/codemode/test/codemode.test.ts` (until upstream takes it). In
    `.ultimate/settings.json`, keep `lander.checks` as ours: the machine sets those numbers (`diverge-lander-checks`).
-   The collapsed write/edit cards (`~/.ultimate/extensions/tool-cards`) and the reviewer-architecture thinking
-   (`.ultimate/agents/reviewer-architecture.thinking.md`) are not core: they should never conflict.
+   The collapsed write/edit cards (`~/.ultimate/extensions/tool-cards`), the reviewer-architecture thinking
+   (`.ultimate/agents/reviewer-architecture.thinking.md`) and the Dream thresholds are not core: they should never
+   conflict. The thresholds (55% and 35%) live in the Automations panel, and since upstream 34dcbea1 a new chapter
+   keeps them; if a Fall asleep ever resets them to 70 and 50, edit both again in the panel.
    Agent files load in sorted order and an overlay needs its base loaded first, so the overlay's name must sort
    after `reviewer-architecture.md`: do not rename it to sort earlier (`reviewer-architecture-thinking.md` does).
 4. Check that each local change survived: `git diff upstream/main --stat` lists only what the fork adds, and each
