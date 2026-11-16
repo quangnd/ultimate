@@ -36,11 +36,19 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    - upstream restructured the area: re-port our intent onto the new code;
    - unrelated: keep both;
    - unsure: ask the user with a card, naming the memory and the two options.
-3. Expected conflict spots: `extensions/voice/web.tsx` and `extensions/coding-tools/web.tsx`. In
+3. Expected conflict spots: `extensions/voice/web.tsx` and the two numbers in `extensions/dream/built-ins.ts`. In
    `.ultimate/settings.json`, keep `lander.checks` as ours: the machine sets those numbers (`diverge-lander-checks`).
+   The collapsed write/edit cards (`~/.ultimate/extensions/tool-cards`) and the reviewer-architecture thinking
+   (`.ultimate/agents/reviewer-architecture.thinking.md`) are not core: they should never conflict.
+   Agent files load in sorted order and an overlay needs its base loaded first, so the overlay's name must sort
+   after `reviewer-architecture.md`: do not rename it to sort earlier (`reviewer-architecture-thinking.md` does).
 4. Check that each local change survived: `git diff upstream/main --stat` lists only what the fork adds, and each
    `diverge-*` memory's change is in it.
-5. Run `pnpm check` and the tests of the files you resolved by hand (`pnpm test <path>`).
+5. Run `pnpm check` and the tests of the files you resolved by hand (`pnpm test <path>`). Then type-check the personal
+   extension against the merged clone: `node scripts/check-extension.ts ~/.ultimate/extensions/tool-cards`. A
+   failure means upstream changed `@/sdk`, `Tool` or `ToolHeader`: fix the extension, which is outside the repository,
+   and check once that a streaming write or edit card stays closed and a finished edit opens (it relies on upstream's
+   `Write` closing when it first renders after streaming and on `Edit`'s `defaultOpen`).
 6. In the report, say whether landing the merge needs a restart: yes when `server/`, `shared/`, `patches/` or
    `pnpm-lock.yaml` changed against the previous main (`git diff --stat HEAD~1 -- server shared patches pnpm-lock.yaml`
    on the merge commit), otherwise no. Tell @ultimate which `diverge-*` memories are now stale or dropped.
