@@ -33,7 +33,6 @@ import { CancelAction } from './refs.ts'
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
-/** A path relative to the conversation's cwd, else with `~`. */
 function usePath(path: string) {
   const cwd = useConversation((conversation) => conversation.agent.cwd)
   const defaultCwd = useStore((state) => state.system?.execution.defaultCwd)
@@ -47,7 +46,6 @@ function lineCount(value: string) {
 }
 const lines = (count: number) => `${count} line${count === 1 ? '' : 's'}`
 
-/** The skill a read loads: the folder name of a `SKILL.md`, the convention Pi's skill list points agents at. */
 export function skillOf(path: string) {
   const parts = path.split('/')
   return parts.at(-1) === 'SKILL.md' && parts.length > 1 ? parts.at(-2) : undefined
@@ -65,9 +63,11 @@ function Read({ call }: { call: ToolCallView }) {
   const failed = call.status === 'error'
   const count = call.status === 'done' ? lineCount(call.output) : 0
   const image = call.images[0]
-  // The image itself says what Pi's bare "Read image file [type]." note does; keep only notes that add something.
   const diagnostics = image
-    ? call.diagnostics.filter((d) => !/^Read image file \[[^\]]+\]\.$/.test(d.message))
+    ? call.diagnostics.filter((d) => {
+        const redundantImageNote = /^Read image file \[[^\]]+\]\.$/.test(d.message)
+        return !redundantImageNote
+      })
     : call.diagnostics
   return (
     <Tool defaultOpen={failed || !!image}>
@@ -118,7 +118,6 @@ function Read({ call }: { call: ToolCallView }) {
   )
 }
 
-/** Keeps a growing body scrolled to its end while `following`, as a running bash call does. */
 function useFollow<T extends HTMLElement>(following: boolean, content: unknown) {
   const ref = useRef<T>(null)
   useEffect(() => {
@@ -130,7 +129,6 @@ function useFollow<T extends HTMLElement>(following: boolean, content: unknown) 
 
 const useShowWriting = () => useExtensionUiState('showWriting', false)
 
-/** A file call's title: its path, or a shimmering verb until the model has written the path. */
 function FileTitle({ path, verb }: { path: string; verb: string }) {
   const shown = usePath(path)
   return path ? shown : <Shimmer>{`${verb}…`}</Shimmer>
@@ -143,11 +141,10 @@ function Write({ call }: { call: ToolCallView }) {
   const failed = call.status === 'error'
   const streaming = call.status === 'streaming'
   const [show] = useShowWriting()
-  // Set once the content has been on show, so the card stays open rather than jump shut when the write lands.
-  const [watched, setWatched] = useState(false)
-  if (show && streaming && !watched) setWatched(true)
+  const [contentWasShown, setContentWasShown] = useState(false)
+  if (show && streaming && !contentWasShown) setContentWasShown(true)
   const [toggled, setToggled] = useState<boolean>()
-  const open = toggled ?? (failed || (show && (watched || streaming)))
+  const open = toggled ?? (failed || (show && (contentWasShown || streaming)))
   const scroller = useFollow<HTMLDivElement>(streaming, content)
   return (
     <Tool onOpenChange={setToggled} open={open}>
@@ -203,8 +200,8 @@ function Edit({ call }: { call: ToolCallView }) {
     : details.diff
       ? parseDisplayDiff(details.diff)
       : editRows(edits)
-  // Counts only once the model has written the whole call: mid-stream they would still change.
-  const { added, removed } = countChanges(streaming ? [] : rows)
+  const finalEditRows = streaming ? [] : rows
+  const { added, removed } = countChanges(finalEditRows)
   const failed = call.status === 'error'
   const [show] = useShowWriting()
   const [toggled, setToggled] = useState<boolean>()
@@ -257,14 +254,12 @@ function exitOf(call: ToolCallView): { label: string; ok: boolean } | undefined 
 
 const separators: Record<string, string> = { '&&': '&&', '||': '||', ';': '·' }
 
-/** The file a heredoc writes, by name: `cat > src/a.ts <<EOF` writes `a.ts`. */
 const written = (step: BashStep) =>
   step.heredocs
     .find((heredoc) => heredoc.file && !heredoc.file.startsWith('heredoc.'))
     ?.file?.split('/')
     .at(-1)
 
-/** The header line: each step's programs joined by pipe arrows, steps by their operators, repeats folded. */
 function BashSummary({ steps }: { steps: BashStep[] }) {
   const runs: { step: BashStep; count: number }[] = []
   for (const step of steps) {
@@ -306,7 +301,6 @@ function BashSummary({ steps }: { steps: BashStep[] }) {
   )
 }
 
-/** Cancel a running bash call: its command is killed and the model gets the output so far. */
 function CancelCall({ callId }: { callId: string }) {
   const conversationId = useConversation((conversation) => conversation.id)
   const [sent, setSent] = useState(false)
@@ -446,7 +440,6 @@ function Bash({ call }: { call: ToolCallView }) {
   )
 }
 
-/** A file tool as a step line: its verb and path. */
 const fileLine = (verb: string) =>
   function FileLine({ call }: { call: ToolCallView }) {
     return (
@@ -456,7 +449,6 @@ const fileLine = (verb: string) =>
     )
   }
 
-/** A read as a step line; a skill's `SKILL.md` names the skill it loads. */
 function ReadLine({ call }: { call: ToolCallView }) {
   const path = text(call.args.path)
   const shown = usePath(path)
@@ -472,7 +464,6 @@ function ReadLine({ call }: { call: ToolCallView }) {
   )
 }
 
-/** A bash call as a step line: its programs, as its header shows them. */
 function BashLine({ call }: { call: ToolCallView }) {
   const command = text(call.args.command)
   const display = useMemo(() => formatBashCommand(command), [command])

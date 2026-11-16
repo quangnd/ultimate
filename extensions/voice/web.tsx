@@ -20,57 +20,41 @@ import type { UltimateContext } from '@/sdk'
 import { meansNone } from '../../lib/errors.ts'
 import { StatusAction, TranscribeAction } from './refs.ts'
 
-/** Recordings stop on their own here: well under the 8 MB the server takes at any browser's bitrate. */
-const MAX_MS = 5 * 60_000
-/** In order of preference; iOS Safari records only `audio/mp4`. */
-const TYPES = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
-/**
- * No default binding claims `mod+shift+v` in Chrome or Safari on macOS or Windows: it is a letter chord, so the
- * browser's "paste as plain text" (itself a page feature some rich editors add for Ctrl/Cmd+Shift+V, not a browser
- * interception) never comes up, since the composer is a plain `<textarea>` with nothing to strip.
- */
-const KEYS = 'mod+shift+v'
-const keyHint = formatKeys(KEYS)[0].join('')
+const uploadSafeRecordingMs = 5 * 60_000
 
-/**
- * Every mounted button's controls, by the conversation it records into: the shortcut drives the same recorder the
- * tap does (never a second one), reached by the conversation its command ran in (the focused composer's, or the
- * shown conversation's from the palette). `registerVoice` registers one on mount and withdraws it on unmount; tests
- * use it directly to drive the commands without mounting the button.
- */
+const recordingMimeOrder = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
+
+const toggleShortcut = 'mod+shift+v'
+const toggleShortcutHint = formatKeys(toggleShortcut)[0].join('')
+
 type VoiceControls = { toggle: () => void; cancel: () => void; recording: boolean }
-const buttons = new Map<number, VoiceControls>()
+const controlsByConversation = new Map<number, VoiceControls>()
 
 export function registerVoice(id: number, controls: VoiceControls): () => void {
-  buttons.set(id, controls)
-  return () => void buttons.delete(id)
+  controlsByConversation.set(id, controls)
+  return () => void controlsByConversation.delete(id)
 }
 
-/** Hidden when no composer offers voice here: an unsupported browser, or no mounted button for this conversation. A missing key stays visible, like the dimmed button: invoking it opens the Secrets row. */
-function unavailable(context: UltimateContext) {
-  if (unsupported()) return true
+function composerOffersVoice(context: UltimateContext) {
+  if (unsupported()) return false
   const id = context.conversationId
-  return id === undefined || !buttons.has(id)
+  return id !== undefined && controlsByConversation.has(id)
 }
 
 function toggleVoice(context: UltimateContext) {
   const id = context.conversationId
-  if (id !== undefined) buttons.get(id)?.toggle()
+  if (id !== undefined) controlsByConversation.get(id)?.toggle()
 }
 
-/**
- * Escape cancels a live recording, but only while the conversation is idle: `agent.stop` already owns Escape to stop
- * a busy run, and the two `when`s never both hold, so they never compete for the same keypress.
- */
-function cancellable(context: UltimateContext) {
+function escapeCancelsRecording(context: UltimateContext) {
   const id = context.conversationId
   if (id === undefined || getConversation(id).busy) return false
-  return buttons.get(id)?.recording ?? false
+  return controlsByConversation.get(id)?.recording ?? false
 }
 
 function cancelVoice(context: UltimateContext) {
   const id = context.conversationId
-  if (id !== undefined) buttons.get(id)?.cancel()
+  if (id !== undefined) controlsByConversation.get(id)?.cancel()
 }
 
 type Recording = {
@@ -83,11 +67,6 @@ type Recording = {
   send: boolean
 }
 
-/**
- * Once the audio is ready: transcribe it, then insert at the cursor as Stop always does, and also run the composer's
- * own send when `send` is true (Send, or Enter while recording). A failed or empty transcription sends nothing; the
- * error shows as it does today. Exported so this core path is tested without a browser.
- */
 export async function handleTranscription(
   transcribe: () => Promise<{ text: string }>,
   send: boolean,
@@ -103,10 +82,6 @@ export async function handleTranscription(
   }
 }
 
-/**
- * Whether a keydown should send the live recording: Enter with no modifiers, not composing, and typed into this
- * conversation's own composer (never a side chat's or another conversation's). Exported for the same reason.
- */
 export function entersSend(
   event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey' | 'isComposing'>,
   targetConversation: string | undefined,
@@ -118,7 +93,6 @@ export function entersSend(
   return targetConversation === String(id)
 }
 
-/** Why this browser cannot record at all, or undefined when it can. */
 function unsupported(): string | undefined {
   if (!window.isSecureContext) return 'Voice needs HTTPS: open Ultimate over its tailnet URL'
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined')
@@ -134,12 +108,7 @@ async function base64(blob: Blob) {
   return btoa(binary)
 }
 
-/**
- * Runs conversation `id`'s own Send, the same form its Send button submits: a frame after the transcript lands in the
- * draft, once React has rendered it (the same wait `insertIntoComposer` gives the cursor), so the submit reads it
- * instead of the draft from before. A busy conversation steers or queues it, as typed text does.
- */
-function submitComposer(id: number) {
+function submitComposerAfterRender(id: number) {
   requestAnimationFrame(() => {
     document
       .querySelector<HTMLTextAreaElement>(`textarea[data-conversation="${id}"]`)
@@ -153,7 +122,6 @@ const clock = (ms: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/** Four bars that follow the microphone's level; still under reduced motion, where the dot stays solid instead. */
 function Level({ audio, stream }: { audio?: AudioContext; stream: MediaStream }) {
   const bars = useRef<HTMLSpanElement[]>([])
   useEffect(() => {
@@ -194,7 +162,6 @@ function Level({ audio, stream }: { audio?: AudioContext; stream: MediaStream })
   )
 }
 
-/** Tap to record, tap to stop (or `mod+shift+v`); the words land in the draft at the cursor, unsent, for review. */
 function VoiceButton() {
   const { id } = useConversation()
   const status = useAction(StatusAction)
@@ -203,13 +170,12 @@ function VoiceButton() {
   const [transcribing, setTranscribing] = useState(false)
   const [error, setError] = useState<string>()
   const now = useNow(250, recording !== undefined)
-  const current = useRef<Recording>(undefined)
-  current.current = recording
+  const composerRecording = useRef<Recording>(undefined)
+  composerRecording.current = recording
 
-  // A recording never outlives its composer: leaving the conversation drops it and frees the microphone.
-  useEffect(() => () => finish(current.current, true), [id])
+  useEffect(() => () => finish(composerRecording.current, true), [id])
   useEffect(() => {
-    if (recording && now - recording.started >= MAX_MS) finish(recording, false)
+    if (recording && now - recording.started >= uploadSafeRecordingMs) finish(recording, false)
   }, [now, recording])
   useEffect(() => {
     if (!error) return undefined
@@ -223,8 +189,6 @@ function VoiceButton() {
     if (active.recorder.state !== 'inactive') active.recorder.stop()
     setRecording(undefined)
   }
-  // A ref holds the latest finish (it closes over this render's state); the Enter listener below reads it without
-  // depending on it, the same trick `latestToggle` uses.
   const latestFinish = useRef(finish)
   latestFinish.current = finish
 
@@ -238,7 +202,7 @@ function VoiceButton() {
         send,
         {
           insert: (text) => insertIntoComposer(id, text),
-          submit: () => submitComposer(id),
+          submit: () => submitComposerAfterRender(id),
           error: setError,
         },
       )
@@ -265,7 +229,7 @@ function VoiceButton() {
       )
       return
     }
-    const type = TYPES.find((candidate) => MediaRecorder.isTypeSupported(candidate))
+    const type = recordingMimeOrder.find((candidate) => MediaRecorder.isTypeSupported(candidate))
     const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined)
     const audio = typeof AudioContext === 'undefined' ? undefined : new AudioContext()
     const active: Recording = {
@@ -297,11 +261,9 @@ function VoiceButton() {
   const blocked =
     unsupported() ?? (status.data?.available === false ? status.data.reason : undefined)
   const missingKey = !unsupported() && status.data?.available === false
-  // Keeps the editor's focus, so a phone's keyboard neither opens nor closes under the tap.
-  const keepFocus = (event: React.PointerEvent) => event.preventDefault()
 
-  // Tap and the shortcut share this: start if idle, stop (and transcribe) if recording. A missing key opens its row
-  // in Secrets, as the tap does; a blocked browser shows why, beside the button.
+  const keepEditorFocus = (event: React.PointerEvent) => event.preventDefault()
+
   function toggle() {
     if (transcribing || status.loading) return
     if (recording) return finish(recording, false)
@@ -309,39 +271,34 @@ function VoiceButton() {
     if (blocked) return setError(blocked)
     void start()
   }
-  // A ref holds the latest toggle (it closes over this render's state); the map entry stays the same object across
-  // renders, so registering it costs one Map write per mount, not one per render.
   const latestToggle = useRef(toggle)
   latestToggle.current = toggle
 
-  // Registers for the shortcut and the palette command; withdrawn on unmount or a conversation switch.
   useEffect(() => {
     if (id === undefined) return undefined
     return registerVoice(id, {
       toggle: () => latestToggle.current(),
-      cancel: () => finish(current.current, true),
+      cancel: () => finish(composerRecording.current, true),
       get recording() {
-        return !!current.current
+        return !!composerRecording.current
       },
     })
   }, [id])
 
-  // Enter sends the live recording, same as tapping Send: captured ahead of the composer's own Enter-to-send (which
-  // runs on bubble, after this), so only one of them fires for the same keypress. Everywhere else Enter is untouched.
   useEffect(() => {
     if (id === undefined) return undefined
     const conversationId = id
-    function onKeyDown(event: KeyboardEvent) {
+    function captureEnterToSend(event: KeyboardEvent) {
       const target = event.target
       const conversation =
         target instanceof HTMLTextAreaElement ? target.dataset.conversation : undefined
-      if (!entersSend(event, conversation, conversationId, !!current.current)) return
+      if (!entersSend(event, conversation, conversationId, !!composerRecording.current)) return
       event.preventDefault()
       event.stopPropagation()
-      latestFinish.current(current.current, false, true)
+      latestFinish.current(composerRecording.current, false, true)
     }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keydown', captureEnterToSend, true)
+    return () => window.removeEventListener('keydown', captureEnterToSend, true)
   }, [id])
 
   if (recording)
@@ -351,7 +308,7 @@ function VoiceButton() {
           aria-label="Cancel recording"
           className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground pointer-coarse:size-9"
           onClick={() => finish(recording, true)}
-          onPointerDown={keepFocus}
+          onPointerDown={keepEditorFocus}
           title="Cancel"
           type="button"
         >
@@ -366,7 +323,7 @@ function VoiceButton() {
           aria-label="Stop and transcribe"
           className="flex size-7 items-center justify-center rounded-lg bg-error text-white hover:bg-error/90 pointer-coarse:size-9"
           onClick={() => finish(recording, false)}
-          onPointerDown={keepFocus}
+          onPointerDown={keepEditorFocus}
           title="Stop and transcribe"
           type="button"
         >
@@ -376,7 +333,7 @@ function VoiceButton() {
           aria-label="Send"
           className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 pointer-coarse:size-9"
           onClick={() => finish(recording, false, true)}
-          onPointerDown={keepFocus}
+          onPointerDown={keepEditorFocus}
           title="Send (Enter)"
           type="button"
         >
@@ -410,9 +367,8 @@ function VoiceButton() {
                 'opacity-50 hover:bg-transparent hover:text-muted-foreground',
             )}
             data-voice={blocked ? 'blocked' : transcribing ? 'transcribing' : 'idle'}
-            // On a phone there is no tooltip: the tap says why, as toggle() does for every trigger.
             onClick={toggle}
-            onPointerDown={keepFocus}
+            onPointerDown={keepEditorFocus}
             type="button"
           >
             {transcribing ? (
@@ -423,7 +379,7 @@ function VoiceButton() {
           </button>
         </TooltipTrigger>
         <TooltipContent>
-          {blocked ?? `Voice input: tap to record, tap again to transcribe · ${keyHint}`}
+          {blocked ?? `Voice input: tap to record, tap again to transcribe · ${toggleShortcutHint}`}
         </TooltipContent>
       </Tooltip>
     </div>
@@ -436,9 +392,9 @@ export default defineWebExtension({
     {
       id: 'voice.toggle',
       title: 'Voice input: start / stop recording',
-      keys: KEYS,
+      keys: toggleShortcut,
       whileTyping: true,
-      when: (context) => !unavailable(context),
+      when: (context) => composerOffersVoice(context),
       run: (context) => toggleVoice(context),
     },
     {
@@ -446,7 +402,7 @@ export default defineWebExtension({
       title: 'Voice input: cancel recording',
       keys: 'escape',
       whileTyping: true,
-      when: (context) => cancellable(context),
+      when: (context) => escapeCancelsRecording(context),
       run: (context) => cancelVoice(context),
     },
   ],
