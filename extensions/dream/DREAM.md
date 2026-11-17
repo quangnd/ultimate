@@ -9,9 +9,12 @@ itself.
 
 A dream is ordinary work: one branch, its answer, the user's decisions, ordinary branches for what they approve. There
 is no session to track. Dream's actions, called with codemode `ultimate.action('dream', name, args)`: `prepare
-{chapter, learned, handoff}` and `stats` (tool numbers from the trace, no model). The trace keeps only about the last
-7 days, so `stats` and `ultimate.trace` see only that window, and `stats` counts only tool calls; older failures and
-model errors are found in conversation entries.
+{chapter, learned, handoff}` and `stats` (tool numbers from the trace, no model). `stats` counts tool calls over the
+whole retained trace: about the last 7 days, or the newest 200,000 calls, whichever ends first. `debug trace` and
+`ultimate.trace` do not read that window whole: they return the newest rows only (the newest 100 by default for
+`ultimate.trace`, 50 for `debug trace`, at most 1000, and `debug trace` cuts its text at about 160 rows), so on a busy
+project a query can cover hours rather than days. For older failures and model errors, read conversation entries and
+`watchdog.failure` cards.
 
 ## For @ultimate
 
@@ -105,9 +108,11 @@ Every pass starts from @ultimate's handoff in its brief, then reads with codemod
 `#conversation/entry`, a trace error, a commit or `path:line`. Conversation summaries and abstracts (in the root's
 tally, `ultimate.entries(<root>)`) are the cheap way in; open a conversation only where they point at something.
 
-- **memory** — distil the project memory: memories that are outdated, contradicted, duplicated or too vague; lessons
-  that later conversations taught but nobody remembered. Output add/update/delete ops, each with reason and evidence
-  (the memory review in extensions/lineage/README.md). Never drop or weaken the memory about the user.
+- **memory** — hold every memory to one test: would a branch starting next month act differently without it? Delete
+  what fails: what the code, docs or instructions now show, one-off or tabled decisions, finished investigations,
+  lessons a check now prevents. Merge overlaps, update what is outdated or contradicted, and add lessons later
+  conversations taught that nobody remembered and that pass the test. Output add/update/delete ops, each with reason
+  and evidence (the memory review in extensions/lineage/README.md). Never drop or weaken the memory about the user.
 - **failures** — what failed often: `watchdog.failure` cards, tool and action errors in the trace, retries, reactor
   failures, lander rejections, runs the user had to stop. Group by cause; for the top ones propose a fix.
 - **tools** — `stats` gives calls, failures, mean duration and enabled tools never called. Explain the numbers: why a

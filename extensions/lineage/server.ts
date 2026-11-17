@@ -42,7 +42,7 @@ import type { ActionContext } from '../../server/actions.ts'
 import type { ExtensionHost } from '../../server/extensions.ts'
 import { SubmissionLanded, WorkspacesApi } from '../workspaces/api.ts'
 import type { LandedData } from '../workspaces/api.ts'
-import { Branch, Branched, LineageApi, Rooted, Roots } from './api.ts'
+import { Branch, Branched, LineageApi, MemorySearch, Rooted, Roots, Tally } from './api.ts'
 import { ConversationsApi, Trees } from '../conversations/api.ts'
 import { Standing, Started } from '../subagents/api.ts'
 import { spawn } from 'node:child_process'
@@ -51,24 +51,22 @@ import {
   ForgetAction,
   OpenEditorAction,
   RecentAction,
-  TallyDoc,
   LineageResetEntry,
   AbstractEntry,
   FinishedEntry,
 } from './refs.ts'
+import type { MemoryItem } from './refs.ts'
 import { BranchedEntry } from './entries.ts'
 import { NoteEntry } from '../entries/api.ts'
 import {
   applyMemoryOps,
   BODY_CHARS,
   LINE_CHARS,
-  Memorized,
   Memory,
   memoryBrief,
   MEMORY_RULES,
   MEMORY_SLUG,
   memoryIndex,
-  memorizeTask,
   memoryText,
 } from './memory.ts'
 import { catchup, Seen, seedSeen, watchSeen } from './catchup.ts'
@@ -96,17 +94,6 @@ export type TallyState = {
   briefTokens?: number
   since?: EntryId
 }
-const newTallyWithIsolatedAnchors = (): TallyState => ({ abstracts: {}, tokens: 0 })
-export const Tally = defineDoc<TallyState>({
-  kind: TallyDoc.kind,
-  checkpointWhen: () => false,
-  version: 1,
-  scope: 'conversation',
-  history: 'latest',
-  fork: 'initial',
-  initial: newTallyWithIsolatedAnchors,
-})
-
 export const docs = [Roots, Branch, Tally, Seen, Memory]
 export const userActions = ['rewind', 'forget', 'compact', 'openEditor']
 
@@ -1231,6 +1218,29 @@ export default function lineageExtension(host: ExtensionHost) {
     if (!roots.includes(id)) throw new Error(`#${id} is not a listed root`)
     return id
   }
+  host.want(MemorySearch)
+  const searchMemories = async (
+    query: string,
+    memories: Record<string, MemoryItem>,
+    ctx: Context,
+  ): Promise<string[] | undefined> => {
+    const search = host.want(MemorySearch)
+    if (!search) return undefined
+    try {
+      const slugs = await search.search(
+        query,
+        memories,
+        AbortSignal.any([
+          ...(ctx.abortSignal ? [ctx.abortSignal] : []),
+          AbortSignal.timeout(10_000),
+        ]),
+      )
+      return slugs.filter((slug) => Object.hasOwn(memories, slug))
+    } catch (error) {
+      if (ctx.abortSignal?.aborted) throw error
+      return undefined
+    }
+  }
   const ultimateCompactionMemoryBrief = async (id: ConversationId, ctx: Context) => {
     const standing = await host.harness().snapshot(Standing, ROOT_CONVERSATION_ID, ctx)
     if (standing?.ultimate !== id) return undefined
@@ -1302,34 +1312,6 @@ export default function lineageExtension(host: ExtensionHost) {
       { conversationId: root, ownership: { kind: 'conversation' }, background: true },
     )
   })
-  const Memorize = memorizeTask(
-    host,
-    async (tx, root, from) => (await tx.doc(Tally, root)).abstracts[String(from)]?.text,
-  )
-  host.react(
-    'memorize',
-    [SubmissionLanded],
-    async (tx, { data: landing }) => {
-      const from = landing.conversationId
-      const roots = (await tx.doc(Roots, ROOT_CONVERSATION_ID)).roots
-      const root = await climbOwnersThenForkSources(tx, await tx.conversation(from), roots)
-      if (root === undefined || root === from) return
-      const permanentLandingReceipt = await tx.doc(Memorized, root, landing.submission, null)
-      if (permanentLandingReceipt.task !== undefined) return
-      permanentLandingReceipt.task = await tx.createTask(
-        Memorize,
-        {
-          root,
-          submission: landing.submission,
-          from,
-          at: landing.at,
-          note: landingNote(landing).text,
-        },
-        { conversationId: root, ownership: { kind: 'conversation' }, background: true },
-      )
-    },
-    { from: 'now' },
-  )
   watchSeen(host, context)
   watchTally(host, context)
   return defineExtension({
@@ -1339,7 +1321,6 @@ export default function lineageExtension(host: ExtensionHost) {
       PromptCreatedWithBranch,
       ReplaySafeNonTallyLandingNote,
       WakeAfterPlacedManualCompaction,
-      Memorize,
       rewindTask(host),
     ],
     sections: [section('lineage', (input, ctx) => lineageSection(host, input.conversationId, ctx))],
@@ -1546,40 +1527,54 @@ export default function lineageExtension(host: ExtensionHost) {
       defineTool({
         name: 'memory',
         description:
-          "Read your project's memory, kept in your tree's root: without `read`, the index (one line per memory); with `read: slug`, that memory in full with its source. Outside a tree it reads the project's only root; `root` reads another root's.",
+          "Read your project's memory, kept in your tree's root: without arguments, the index (one line per memory); with `read`, one slug or several, those memories in full with their source; with `query`, one topic or situation in plain words, the memories about it in full (none when nothing applies). Outside a tree it reads the project's only root; `root` reads another root's.",
         parameters: obj({
-          read: opt(str({ minLength: 1 })),
+          read: opt(union([str({ minLength: 1 }), arr(str({ minLength: 1 }), { minItems: 1 })])),
+          query: opt(str({ minLength: 1 })),
           root: opt(int({ minimum: 1 })),
         }),
-        async execute({ read, root }, api, ctx) {
+        async execute({ read, query, root }, api, ctx) {
           const id = await memoryRoot(
             api.conversationId,
             root === undefined ? undefined : parseConversationId(root),
             ctx,
           )
           const { memories } = (await host.harness().snapshot(Memory, id, ctx)) ?? { memories: {} }
-          if (read !== undefined) {
-            const item = Object.hasOwn(memories, read) ? memories[read] : undefined
-            if (!item) throw new Error(`#${id} has no memory ${read}`)
-            return { output: [{ type: 'text', text: memoryText(read, item) }] }
-          }
           const index = memoryIndex(memories)
-          return {
-            output: [
-              {
-                type: 'text',
-                text: index.length
-                  ? `#${id}'s memory (${index.length}):\n${index.join('\n')}`
-                  : `#${id} has no memories yet.`,
-              },
-            ],
+          const indexText = index.length
+            ? `#${id}'s memory (${index.length}):\n${index.join('\n')}`
+            : `#${id} has no memories yet.`
+          const inFull = (slugs: string[]) =>
+            slugs.map((slug) => memoryText(slug, memories[slug])).join('\n\n---\n\n')
+          const parts: string[] = []
+          if (read !== undefined) {
+            const slugs = [...new Set(typeof read === 'string' ? [read] : read)]
+            const known = slugs.filter((slug) => Object.hasOwn(memories, slug))
+            const unknown = slugs.filter((slug) => !Object.hasOwn(memories, slug))
+            if (known.length) parts.push(inFull(known))
+            if (unknown.length)
+              parts.push(`#${id} has no memory ${unknown.join(', ')}. ${indexText}`)
           }
+          if (query !== undefined) {
+            const found = index.length ? await searchMemories(query, memories, ctx) : undefined
+            parts.push(
+              !index.length
+                ? indexText
+                : !found
+                  ? `Memory search is unavailable (it needs the classify extension and TYPESAFE_API_KEY); the index instead:\n${indexText}`
+                  : found.length
+                    ? inFull(found)
+                    : `No memory in #${id} is about this.`,
+            )
+          }
+          if (!parts.length) parts.push(indexText)
+          return { output: [{ type: 'text', text: parts.join('\n\n') }] }
         },
       }),
       defineTool({
         name: 'remember',
         deferred: true,
-        description: `Change a root's project memory in one atomic batch. Limits, checked before anything is written: ${MEMORY_RULES}. One op over a limit refuses the whole batch, so count a line's characters before you send it and keep detail in the body. Ops are {op:'add', slug, kind: 'decision'|'fact'|'lesson', line, body, source?}, {op:'update', slug, kind?, line?, body?, source?} and {op:'delete', slug}; source is \`#<conversation>/<entry>\`. \`root\` defaults to your tree's root, or outside a tree to the project's only root.`,
+        description: `Change a root's project memory in one atomic batch. Memory is for what a future branch would get wrong without it: the user's way of working, standing decisions with their reason, lessons from real incidents; never what code, docs, git or your prompt show, one-off outcomes or tabled ideas. Limits, checked before anything is written: ${MEMORY_RULES}. One op over a limit refuses the whole batch, so count a line's characters before you send it and keep detail in the body. Ops are {op:'add', slug, kind: 'decision'|'fact'|'lesson', line, body, source?}, {op:'update', slug, kind?, line?, body?, source?} and {op:'delete', slug}; source is \`#<conversation>/<entry>\`. \`root\` defaults to your tree's root, or outside a tree to the project's only root.`,
         parameters: obj({
           root: opt(int({ minimum: 1 })),
           ops: arr(

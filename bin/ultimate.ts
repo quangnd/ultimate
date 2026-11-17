@@ -7,7 +7,8 @@ import { parseArgs } from 'node:util'
 import { projectHome } from '../lib/project-paths.ts'
 import { acquireLock, readOwner, retireStorageOwner } from '../lib/lock.ts'
 import { deadline, pace } from '../lib/timers.ts'
-import { watch, existsSync } from 'node:fs'
+import { watch, existsSync, readdirSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { watchRoots } from '../server/watch-roots.ts'
 import { join, resolve as resolvePath } from 'node:path'
 import { createServer, connect } from 'node:net'
@@ -29,14 +30,30 @@ if (positionals.length > 1) throw new Error('Usage: ultimate [dir] [--port N] [-
 const opening = !values['no-open'] && process.env.ULTIMATE_NO_OPEN !== '1'
 const available = (name: string) =>
   process.env.PATH?.split(':').some((path) => existsSync(join(path, name)))
+function installedChromeApp(app: string) {
+  const apps = join(homedir(), 'Applications/Chrome Apps.localized')
+  const value = (text: string, key: string) =>
+    text.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`))?.[1]
+  try {
+    const plist = readdirSync(apps)
+      .filter((bundle) => bundle.endsWith('.app'))
+      .map((bundle) => readFileSync(join(apps, bundle, 'Contents/Info.plist'), 'utf8'))
+      .find((text) => value(text, 'CrAppModeShortcutURL')?.startsWith(`${app}/`))
+    return plist && value(plist, 'CrAppModeShortcutID')
+  } catch {
+    return undefined
+  }
+}
 function openWindow(port: number) {
   const app = `http://ultimate.localhost:${port}`
   const tab = `http://127.0.0.1:${port}`
   let command = process.platform === 'darwin' ? 'open' : 'xdg-open'
   let args = [tab]
   if (process.platform === 'darwin') {
-    if (existsSync('/Applications/Google Chrome.app'))
-      args = ['-na', 'Google Chrome', '--args', `--app=${app}`]
+    if (existsSync('/Applications/Google Chrome.app')) {
+      const id = installedChromeApp(app)
+      args = ['-na', 'Google Chrome', '--args', id ? `--app-id=${id}` : `--app=${app}`]
+    }
   } else if (available('omarchy-launch-webapp')) {
     command = 'omarchy-launch-webapp'
     args = [app]
@@ -67,7 +84,16 @@ const projectRoot = await realpath(positionals[0] ?? process.cwd()).catch((error
   process.exit(1)
 })
 const home = process.env.ULTIMATE_HOME ?? projectHome(projectRoot)
-const requestedPort = values.port ?? process.env.ULTIMATE_PORT
+function settingsPort() {
+  let settings: { port?: unknown }
+  try {
+    settings = JSON.parse(readFileSync(join(projectRoot, '.ultimate/settings.json'), 'utf8'))
+  } catch {
+    return undefined
+  }
+  return settings?.port === undefined ? undefined : JSON.stringify(settings.port)
+}
+const requestedPort = values.port ?? process.env.ULTIMATE_PORT ?? settingsPort()
 let port = Number(requestedPort ?? 4747)
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port')
 const lockPath = join(home, 'ultimate.lock')
@@ -207,6 +233,10 @@ try {
   })
 } catch (error) {
   await lock.close()
+  if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+    console.error(`Port ${port} is in use; free it or start with --port N.`)
+    process.exit(1)
+  }
   throw error
 }
 const address = proxy.address()
