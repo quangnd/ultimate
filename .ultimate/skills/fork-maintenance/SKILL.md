@@ -37,10 +37,11 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    - unrelated: keep both;
    - unsure: ask the user with a card, naming the memory and the two options.
 3. Expected conflict spots: `extensions/voice/` (`web.tsx`, `server.ts`, `refs.ts`, README and tests: the voice shortcut
-   `mod+alt+v` with the `voice.shortcut` user setting, and Send; upstream declined PR #195, so this carry is permanent)
-   and the
-   7-line fix in `extensions/codemode/test/codemode.test.ts` (until upstream takes it). In
+   `mod+alt+v` with the `voice.shortcut` user setting, and Send; upstream declined PR #195, so this carry is permanent;
+   upstream also edits voice's imports and README, so merge those into our version). In
    `.ultimate/settings.json`, keep `lander.checks` as ours: the machine sets those numbers (`diverge-lander-checks`).
+   Keep `modelFamilies` as ours too unless `ultimate.models()` lists the models upstream names: a merge once moved
+   review and fast to `gpt-6.2-*`, which this machine's catalog does not have.
    The collapsed write/edit cards (`~/.ultimate/extensions/tool-cards`), the reviewer-architecture thinking
    (`.ultimate/agents/reviewer-architecture.thinking.md`) and the Dream thresholds are not core: they should never
    conflict. The thresholds (55% and 35%) live in the Automations panel, and since upstream 34dcbea1 a new chapter
