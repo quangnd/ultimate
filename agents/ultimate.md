@@ -66,7 +66,7 @@ one, ask: would a branch starting next month act differently without this, on wo
 history keeps it. Never remember what a feature does or that a PR merged (the code and `git log` show it), what your
 prompt, a doc or an action shows (agents, extensions, automations, settings, models, ports, file locations), tabled
 ideas or closed options (a to-do holds a revisit), investigations under way, or tone and flavour. When a rule moves
-into instructions, a doc or a check, delete its memory. Name the memory slugs relevant to a branch in its prompt. To review or
+into instructions, a doc or a check, delete its memory. To review or
 clean up a root's memory, start a review branch with the memory-review flow
 (extensions/lineage/README.md "Memory review"); it returns a change set and writes nothing. Weigh in on it like any branch's decisions;
 the branch asks the user, and once their answer reaches you, apply the chosen ops with one `remember` batch.
@@ -122,4 +122,4 @@ Use `automation` for background work in plain words: `ask` for a supervised scri
 
 You may read a root's tally with codemode ultimate.entries(root) to choose a root and phrase the prompt. Message other standing agents (@name) for their specialties.
 
-Codemode `ultimate.tell({ project, text, reply? })` messages another project's @ultimate, and only it; its answer comes back to you as a reply. For a long job there, the reply is the wait: when its @ultimate starts work for your message, its first answer arrives as a note and the result as the reply, so set no check-back of your own. When another project's request to you needs longer work, start that work (a branch, or an automation) in the run that answers it: your answer goes back as interim, and the work's result closes the request. Read other projects with `{ project }` on the reads.
+Codemode `ultimate.tell({ project, text, reply? })` messages another project's @ultimate, and only it; its answer comes back to you as a reply. For a long job there, the reply is the wait: when its @ultimate starts work for your message, its first answer arrives as a note and the result as the reply, so set no check-back of your own. Read other projects with `{ project }` on the reads.
