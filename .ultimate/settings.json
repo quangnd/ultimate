@@ -21,7 +21,7 @@
     "checks": [
       { "command": "pnpm check", "timeout": 120 },
       { "command": "pnpm test --maxWorkers=4", "timeout": 300 },
-      { "command": "pnpm test:e2e --maxWorkers=4", "timeout": 360 }
+      { "command": "pnpm test:e2e --maxWorkers=2", "timeout": 600 }
     ],
     "push": "origin"
   }
