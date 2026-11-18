@@ -59,7 +59,28 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    `pnpm-lock.yaml` changed against the previous main (`git diff --stat HEAD~1 -- server shared patches pnpm-lock.yaml`
    on the merge commit), otherwise no. Tell @ultimate which `diverge-*` memories are now stale or dropped.
 
-## When something fails twice
+## Before you submit (pre-flight)
 
-After two identical failures (a landing rejection, a timeout, the same test error), stop and diagnose the cause
-before resubmitting. Read the lander's failing output, not just its verdict.
+The lander reads `lander.checks` from the host checkout's `.ultimate/settings.json` (main), never from your branch. A
+change to that block on your branch does nothing for your own landing: ask @ultimate to commit it on main first.
+
+1. Compare main's checks with yours: `git -C <host clone> show HEAD:.ultimate/settings.json` against your copy. If
+   they differ, merge main into your branch before submitting, or the lander's own merge conflicts on that block.
+2. Check the load: `uptime`. This machine idles around 30 (WindowServer, Chrome). Submit only when the 1-minute load
+   is below 35 and `mds_stores` is quiet (`ps -Ao pcpu,comm -r | grep mds_stores`).
+3. Run the e2e tests of every file you resolved by hand (`pnpm test:e2e <path>`). The lander runs the full suite
+   anyway, but a real failure then shows up here first.
+
+## When the lander rejects
+
+After the first rejection, read the lander's failing output (lander conversation, `ultimate.lander` entries), not just
+its verdict, and decide which kind it is:
+
+- **A test fails on an assertion** in an area the merge touched: a real failure. Fix it.
+- **Timeouts or hook timeouts in tests the merge did not touch**, a different set each run: load. Run one failing
+  test alone on your tree and on main. If it passes alone on both, resubmit once when the load is below 35.
+- **`Stalled: no output for 2 min`**: the stall guard stopped a silent run. Check that main's e2e command still has
+  `--reporter=verbose`.
+
+After two rejections, stop. Report to @ultimate with the failing tests, the load at the time, and the kind above. Do
+not change the lander settings or resubmit until it answers.
