@@ -10,7 +10,7 @@ import { deadline, pace } from '../lib/timers.ts'
 import { watch, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { watchRoots } from '../server/watch-roots.ts'
-import { join, resolve as resolvePath } from 'node:path'
+import { delimiter, join, resolve as resolvePath } from 'node:path'
 import { createServer, connect } from 'node:net'
 import type { Socket } from 'node:net'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +29,7 @@ const { values, positionals } = parseArgs({
 if (positionals.length > 1) throw new Error('Usage: ultimate [dir] [--port N] [--no-open]')
 const opening = !values['no-open'] && process.env.ULTIMATE_NO_OPEN !== '1'
 const available = (name: string) =>
-  process.env.PATH?.split(':').some((path) => existsSync(join(path, name)))
+  process.env.PATH?.split(delimiter).some((path) => existsSync(join(path, name)))
 function installedChromeApp(app: string) {
   const apps = join(homedir(), 'Applications/Chrome Apps.localized')
   const value = (text: string, key: string) =>
@@ -49,7 +49,9 @@ function openWindow(port: number) {
   const tab = `http://127.0.0.1:${port}`
   let command = process.platform === 'darwin' ? 'open' : 'xdg-open'
   let args = [tab]
-  if (process.platform === 'darwin') {
+  if (process.platform === 'win32') {
+    command = 'explorer.exe'
+  } else if (process.platform === 'darwin') {
     if (existsSync('/Applications/Google Chrome.app')) {
       const id = installedChromeApp(app)
       args = ['-na', 'Google Chrome', '--args', id ? `--app-id=${id}` : `--app=${app}`]
@@ -376,8 +378,8 @@ async function checkTypes() {
     active ? { generation: active.generation, pid: active.child.pid } : undefined,
   )
   const child = spawn(
-    join(ultimateRoot, 'node_modules/.bin/tsc'),
-    ['--noEmit', '-p', 'tsconfig.swap.json'],
+    process.execPath,
+    [join(ultimateRoot, 'node_modules/typescript/bin/tsc'), '--noEmit', '-p', 'tsconfig.swap.json'],
     { cwd: ultimateRoot, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   let output = ''

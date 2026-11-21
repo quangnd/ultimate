@@ -6,6 +6,7 @@ import { constants as osConstants } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
 import { pace } from './timers.ts'
+import { killTree, windowsIdentity } from './process-tree.ts'
 import { enterWork } from './cgroup.ts'
 import {
   inProcess,
@@ -26,13 +27,14 @@ export type Group = {
   outOfMemory: () => boolean
 }
 
-export function groupTarget(pid: number) {
+export function groupTarget(pid: number, platform = process.platform) {
   const wouldSignalInitOrEveryUserProcess = !Number.isSafeInteger(pid) || pid <= 1
   if (wouldSignalInitOrEveryUserProcess) throw new Error(`Not a process group: ${pid}`)
-  return -pid
+  return platform === 'win32' ? pid : -pid
 }
 
 export function identify(pid: number): string | undefined {
+  if (process.platform === 'win32') return windowsIdentity(pid)
   if (process.platform === 'darwin') {
     try {
       return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim()
@@ -102,6 +104,7 @@ function permissionDeniedCountsAsAlive(pid: number) {
 
 function send(pid: number, name: NodeJS.Signals) {
   const target = groupTarget(pid)
+  if (process.platform === 'win32') return killTree(pid)
   try {
     process.kill(target, name)
   } catch (error) {
@@ -138,11 +141,18 @@ export function spawnGroup(
 ): Group {
   const { pidFile, grace = 3000, ...rest } = options
   const work = enterWork(program, args)
-  const child = spawn('/bin/sh', ['-c', handshake, work.program, ...work.args], {
-    ...rest,
-    detached: true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
+  const windows = process.platform === 'win32'
+  const child = windows
+    ? spawn(work.program, work.args, {
+        ...rest,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+    : spawn('/bin/sh', ['-c', handshake, work.program, ...work.args], {
+        ...rest,
+        detached: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
   child.stdin.on('error', () => {})
   const groupAliveAtLeaderReaping = new Promise<boolean>((resolve, reject) => {
     child.once('error', () => resolve(false))
@@ -171,7 +181,7 @@ export function spawnGroup(
     child.stdin.end()
     throw error
   }
-  child.stdin.end('\n')
+  child.stdin.end(windows ? undefined : '\n')
   return { child, ended, closed, outOfMemory }
 }
 

@@ -27,7 +27,7 @@ export async function readStore(userHome: string): Promise<Store> {
     throw new Error('Cannot open secret store', { cause: error })
   }
   try {
-    if ((await file.stat()).mode & 0o077)
+    if (process.platform !== 'win32' && (await file.stat()).mode & 0o077)
       throw new Error('Secret store permissions are unsafe. Run chmod 600 ~/.ultimate/secrets.json')
     let data: Store
     try {

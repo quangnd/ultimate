@@ -98,6 +98,12 @@ export async function landings(
   return [...rows.values()]
 }
 
+export function operatingSystem(platform: NodeJS.Platform, arch: string) {
+  if (platform === 'win32')
+    return `Windows ${arch} (commands run in Git Bash: use bash syntax and forward-slash paths such as C:/Users/me/project)`
+  return `${platform === 'darwin' ? 'macOS' : platform} ${arch}`
+}
+
 const noLandingsFromUnavailableHistory = () => []
 
 const digest = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16)
@@ -364,8 +370,7 @@ export default function prompt(host: ExtensionHost) {
       ),
       section('environment', (input) => {
         const cwd = input.env?.cwd ?? input.agent.cwd ?? host.projectRoot
-        const os = process.platform === 'darwin' ? 'macOS' : process.platform
-        return `OS: ${os} ${process.arch}\nWork checkout (effective cwd): ${cwd}\nHost project: ${host.projectRoot}\nRunning Ultimate host: ${host.ultimateRoot}\nUI: ${host.system().process.url} (shared host)\nDirect project edits to the effective cwd. Host-scoped config and extensions remain loaded from the host project and Ultimate clone; edits in a separate checkout do not hot-reload the running host.`
+        return `OS: ${operatingSystem(process.platform, process.arch)}\nWork checkout (effective cwd): ${cwd}\nHost project: ${host.projectRoot}\nRunning Ultimate host: ${host.ultimateRoot}\nUI: ${host.system().process.url} (shared host)\nDirect project edits to the effective cwd. Host-scoped config and extensions remain loaded from the host project and Ultimate clone; edits in a separate checkout do not hot-reload the running host.`
       }),
       section('cwd', (input) => input.env?.cwd ?? input.agent.cwd ?? host.projectRoot),
     ],
