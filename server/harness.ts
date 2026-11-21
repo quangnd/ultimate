@@ -38,6 +38,7 @@ import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node'
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node'
 import { createBuild } from './build.ts'
 import { spawn } from '../lib/spawn.ts'
+import { gitBashPath } from '../lib/shell.ts'
 import { delegatedCore, isolateWork, workMemoryMax, workSpawn } from '../lib/cgroup.ts'
 import { applyHttpProxySettings, configureHttpDispatcher } from './http.ts'
 import type { Notice } from '../shared/protocol.ts'
@@ -124,6 +125,7 @@ export async function prepareHarness(options: HostOptions) {
   let chapter = await activeChapter(home)
   const runtime = await ModelRuntime.create()
   const settings = SettingsManager.create(projectRoot)
+  const shellPath = settings.getShellPath() ?? gitBashPath()
   applyHttpProxySettings(settings.getGlobalSettings().httpProxy)
   configureHttpDispatcher(settings.getHttpIdleTimeoutMs())
   const registry = createRegistry()
@@ -133,7 +135,11 @@ export async function prepareHarness(options: HostOptions) {
   const processHelperExecutionEnv = ({ cwd = projectRoot }: EnvTarget) => {
     let found = envs.get(cwd)
     if (!found) {
-      found = new NodeExecutionEnv({ cwd, spawn: workSpawn(spawn) })
+      found = new NodeExecutionEnv({
+        cwd,
+        spawn: workSpawn(spawn),
+        ...(shellPath && { shellPath }),
+      })
       envs.set(cwd, found)
     }
     return found

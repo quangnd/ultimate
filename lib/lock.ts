@@ -1,4 +1,5 @@
 import { readFile, writeFile, unlink, rename } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { identify } from './process-group.ts'
 import { pace } from './timers.ts'
@@ -100,7 +101,7 @@ export async function acquireLock(
         }
         if (Date.now() >= deadline)
           throw new Error(
-            path.endsWith('/ultimate.lock')
+            basename(path) === 'ultimate.lock'
               ? `Ultimate is already running (pid ${owner?.pid ?? 'unknown'}) at http://127.0.0.1:${owner?.port ?? 'unknown'}${owner?.project ? ` for project ${owner.project}` : ''}`
               : `Ultimate core already owns this storage (pid ${owner?.pid ?? 'unknown'})`,
             { cause: error },
