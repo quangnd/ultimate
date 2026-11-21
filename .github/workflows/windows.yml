@@ -12,8 +12,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      ULTIMATE_SMOKE_LOG: ${{ runner.temp }}/smoke.log
     steps:
       - uses: actions/checkout@v4
       - run: git config --global core.longpaths true
@@ -26,6 +24,8 @@ jobs:
         continue-on-error: true
         run: node scripts/windows-doctor.ts
       - name: Smoke (the gate)
+        env:
+          ULTIMATE_SMOKE_LOG: ${{ runner.temp }}/smoke.log
         run: node scripts/windows-smoke.ts
       - name: Fast test suite (information only)
         if: always()
