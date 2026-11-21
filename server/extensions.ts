@@ -20,6 +20,7 @@ import { discoveryRoots } from '../lib/project-paths.ts'
 import type { ProjectInfo } from './project.ts'
 import { extensionSettingsFiles } from '../lib/extension-settings.ts'
 import { watchRoots } from './watch-roots.ts'
+import { below, inside, samePath, slash } from '../lib/platform.ts'
 import { actionExec } from './actions.ts'
 import type { ExtensionAction } from './actions.ts'
 import type { JsonValue } from '@earendil-works/chord/json'
@@ -551,7 +552,7 @@ export async function loadExtensions(
       if (enabled && record.facets.server && (!servers || servers.has(name))) {
         const facetHost = scope(name)
         try {
-          const module = await vite.ssrLoadModule(join(target, 'server.ts'))
+          const module = await vite.ssrLoadModule(slash(join(target, 'server.ts')))
           const extension: Extension =
             typeof module.default === 'function' ? await module.default(facetHost) : module.default
           if (!extension || extension.name !== name)
@@ -683,18 +684,18 @@ export async function loadExtensions(
     if (
       closed ||
       ![host.ultimateRoot, host.projectRoot, ...roots.slice(1).map((root) => root.path)].some(
-        (root) => resolve(file).startsWith(root + '/'),
+        (root) => inside(resolve(file), root),
       ) ||
-      file.includes('/node_modules/')
+      slash(file).includes('/node_modules/')
     )
       return
-    if (settingsFiles.includes(resolve(file))) {
+    if (settingsFiles.some((settingsFile) => samePath(resolve(file), settingsFile))) {
       enqueue(reloadSettings)
       return
     }
-    const directory = directories.find((root) => file.startsWith(root + '/'))
+    const directory = directories.find((root) => inside(file, root))
     if (!directory && !/\.[cm]?[jt]s$/.test(file)) return
-    if (directory && inExtensionTests(file.slice(directory.length + 1))) return
+    if (directory && inExtensionTests(below(file, directory)!)) return
     if (reloadAllAfterGraphReplacement) {
       reloadAllAfterGraphReplacement = false
       enqueue(() => reload())
@@ -704,23 +705,24 @@ export async function loadExtensions(
       try {
         const selected = new Set<string>()
         const modulesByRealPathOrRemovedLink = vite.moduleGraph.getModulesByFile(
-          await realpath(file).catch(() => file),
+          slash(await realpath(file).catch(() => file)),
         )
         const visited = new Set<import('vite-plus').ModuleNode>()
         const visit = (module: import('vite-plus').ModuleNode) => {
           if (visited.has(module)) return
           visited.add(module)
           for (const name of records.keys())
-            if (module.file === join(targets.get(name)!, 'server.ts')) selected.add(name)
+            if (module.file && samePath(module.file, join(targets.get(name)!, 'server.ts')))
+              selected.add(name)
           for (const importer of module.importers) visit(importer)
         }
         for (const module of modulesByRealPathOrRemovedLink ?? []) visit(module)
         for (const module of visited) vite.moduleGraph.invalidateModule(module)
-        const name = directory ? file.slice(directory.length + 1).split('/')[0] : undefined
+        const name = directory ? below(file, directory)!.split('/')[0] : undefined
         const servers = new Set(selected)
         if (name) {
           selected.add(name)
-          if (directory && file === join(directory, name, 'server.ts')) servers.add(name)
+          if (directory && samePath(file, join(directory, name, 'server.ts'))) servers.add(name)
         }
         await reload(selected, servers)
       } catch (error) {
@@ -731,15 +733,15 @@ export async function loadExtensions(
     })
   }
   const onStructure = (file: string) => {
-    const directory = directories.find((root) => file.startsWith(root + '/'))
+    const directory = directories.find((root) => inside(file, root))
     if (!directory) return onChange(file)
-    if (inExtensionTests(file.slice(directory.length + 1))) return
+    if (inExtensionTests(below(file, directory)!)) return
     if (reloadAllAfterGraphReplacement) {
       reloadAllAfterGraphReplacement = false
       enqueue(() => reload())
       return
     }
-    const name = file.slice(directory.length + 1).split('/')[0]
+    const name = below(file, directory)!.split('/')[0]
     enqueue(() => reload(new Set([name]), new Set([name])))
   }
   const structure = ['add', 'unlink', 'addDir', 'unlinkDir'] as const

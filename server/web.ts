@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { extname, join, relative, resolve, sep } from 'node:path'
+import { extname, join, relative, resolve } from 'node:path'
 import { inExtensionTests } from '../shared/extension-api.ts'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -9,6 +9,7 @@ import { exec } from '../lib/exec.ts'
 import { inProcess, ignoring, isMissing } from '../lib/errors.ts'
 import { debounce } from '../lib/timers.ts'
 import { writeTextAtomically } from '../lib/json-file.ts'
+import { below, inside, samePath, slash } from '../lib/platform.ts'
 import { discoverExtensions } from '../lib/discovery.ts'
 import { discoveryRoots } from '../lib/project-paths.ts'
 import { projectSettings } from '../lib/project-setup.ts'
@@ -108,7 +109,7 @@ export async function createWeb(options: {
     },
     () => undefined,
   )
-  let inputs = new Set(manifest?.inputs)
+  let inputs = new Set(manifest?.inputs.map((file) => slash(file)))
   let brokenRoots = manifest?.broken ?? []
   const retired = new Map(Object.entries(manifest?.retired ?? {}))
   let stale = !manifest || !(await fresh(manifest))
@@ -185,9 +186,7 @@ export async function createWeb(options: {
       const file = result.error.file
       const facet =
         file &&
-        targets.find(
-          (entry) => entry.files.includes('web.tsx') && file.startsWith(entry.target + sep),
-        )
+        targets.find((entry) => entry.files.includes('web.tsx') && inside(file, entry.target))
       if (!facet || facet.name in broken) {
         failed = `The web UI did not build${file ? ` (${relative(ultimateRoot, file)})` : ''}: ${result.error.message}`
         options.notice(failed)
@@ -239,7 +238,7 @@ export async function createWeb(options: {
     await writeTextAtomically(join(folder, 'manifest.json'), JSON.stringify(next))
     manifest = next
     identity = await appIdentity(projectRoot, userHome)
-    inputs = new Set(next.inputs)
+    inputs = new Set(next.inputs.map((file) => slash(file)))
     brokenRoots = next.broken
     const sourceSavedDuringBuild = await savedSince(result.inputs, buildStartedEpochMs)
     if (sourceSavedDuringBuild) stale = true
@@ -283,24 +282,28 @@ export async function createWeb(options: {
     scheduleUpdate.cancel()
     if (options.pages() > 0) scheduleUpdate()
   }
-  const inside = (file: string, root: string) => file === root || file.startsWith(root + sep)
-  const tests = (file: string) =>
-    roots.some((root) => inside(file, root) && inExtensionTests(relative(root, file)))
+  const tests = (file: string) => roots.some((root) => inExtensionTests(below(file, root) ?? ''))
   const onChange = (file: string) => {
-    if (file.includes(`${sep}node_modules${sep}`) || tests(file)) return
-    if (inside(file, webRoot) || always.includes(file) || inputs.has(file)) return touched(file)
+    if (slash(file).includes('/node_modules/') || tests(file)) return
+    if (
+      inside(file, webRoot) ||
+      always.some((known) => samePath(file, known)) ||
+      inputs.has(slash(file))
+    )
+      return touched(file)
     if (roots.some((root) => inside(file, root)))
       inProcess(
         'the web file watcher belongs to this process',
         realpath(file).then(
           (real) =>
-            (inputs.has(real) || brokenRoots.some((root) => inside(real, root))) && touched(file),
+            (inputs.has(slash(real)) || brokenRoots.some((root) => inside(real, root))) &&
+            touched(file),
           () => touched(file),
         ),
       )
   }
   const onStructure = (file: string) => {
-    if (file.includes(`${sep}node_modules${sep}`) || tests(file)) return
+    if (slash(file).includes('/node_modules/') || tests(file)) return
     if (inside(file, webRoot) || roots.some((root) => inside(file, root))) touched(file)
   }
   const structure = ['add', 'unlink', 'addDir', 'unlinkDir'] as const

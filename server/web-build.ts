@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 import { gzipSync } from 'node:zlib'
 import { build } from 'vite-plus'
@@ -55,7 +55,7 @@ try {
     }
   const inputs = output.output.flatMap((chunk) => (chunk.type === 'chunk' ? chunk.moduleIds : []))
   result = {
-    inputs: [...new Set(inputs.filter((id) => id.startsWith('/')).map((id) => id.split('?')[0]))],
+    inputs: [...new Set(inputs.filter((id) => isAbsolute(id)).map((id) => id.split('?')[0]))],
   }
 } catch (error) {
   const first = (error as { errors?: { id?: string; loc?: { file?: string }; message: string }[] })

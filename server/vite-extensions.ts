@@ -7,6 +7,7 @@ import { discoveryRoots } from '../lib/project-paths.ts'
 import { useProjectSetup } from '../lib/project-setup.ts'
 import { extensionTests } from '../shared/extension-api.ts'
 import { ignoring, isMissing } from '../lib/errors.ts'
+import { inside, samePath, slash } from '../lib/platform.ts'
 
 const virtual = 'virtual:ultimate/web-facets'
 const resolved = '\0' + virtual
@@ -48,31 +49,32 @@ export function extensionModules(
       if (
         !importer ||
         options.ssr ||
-        !roots.slice(1).some((root) => importer.startsWith(root + '/')) ||
+        !roots.slice(1).some((root) => inside(importer, root)) ||
         id.startsWith('.') ||
         id.startsWith('/') ||
         id.startsWith('\0')
       )
         return undefined
       if (id.startsWith('@/'))
-        return this.resolve(join(ultimateRoot, 'web/src', id.slice(2)), importer, {
+        return this.resolve(slash(join(ultimateRoot, 'web/src', id.slice(2))), importer, {
           ...options,
           skipSelf: true,
         })
       if (id.startsWith('node:')) return undefined
-      const dependency = await this.resolve(id, join(ultimateRoot, 'package.json'), {
+      const dependency = await this.resolve(id, slash(join(ultimateRoot, 'package.json')), {
         ...options,
         skipSelf: true,
       })
       return dependency
     },
     async load(id) {
-      if (id.split('?')[0] === join(ultimateRoot, 'web/src/index.css')) {
+      if (samePath(id.split('?')[0], join(ultimateRoot, 'web/src/index.css'))) {
         const linkedTargetsSkippedByTailwind = (
           await discoverExtensions(ultimateRoot, projectRoot, userHome)
         )
           .filter(
-            (entry) => entry.source !== 'builtin' && !entry.error && entry.target !== entry.path,
+            (entry) =>
+              entry.source !== 'builtin' && !entry.error && !samePath(entry.target, entry.path),
           )
           .map((entry) => entry.target)
         const existingTrustedRoots = roots.filter(
@@ -81,12 +83,12 @@ export function extensionModules(
         )
         const sourcesExcludingExtensionTests = [
           ...[...existingTrustedRoots, ...linkedTargetsSkippedByTailwind].map(
-            (root) => `@source ${JSON.stringify(root)};\n`,
+            (root) => `@source ${JSON.stringify(slash(root))};\n`,
           ),
           ...[
             ...existingTrustedRoots.map((root) => join(root, '*', extensionTests)),
             ...linkedTargetsSkippedByTailwind.map((target) => join(target, extensionTests)),
-          ].map((tests) => `@source not ${JSON.stringify(tests)};\n`),
+          ].map((tests) => `@source not ${JSON.stringify(slash(tests))};\n`),
         ].join('')
         const current = await readFile(sourcesFile, 'utf8').catch(ignoring(isMissing))
         if (current !== sourcesExcludingExtensionTests) {
@@ -95,7 +97,7 @@ export function extensionModules(
         }
         return (
           (await readFile(join(ultimateRoot, 'web/src/index.css'), 'utf8')) +
-          `\n@import ${JSON.stringify(sourcesFile)};\n`
+          `\n@import ${JSON.stringify(slash(sourcesFile))};\n`
         )
       }
       if (id !== resolved) return undefined
@@ -104,10 +106,10 @@ export function extensionModules(
       )
       const entries = facets.map(
         (entry) =>
-          `${JSON.stringify(join(entry.path, 'web.tsx'))}: ${
+          `${JSON.stringify(slash(join(entry.path, 'web.tsx')))}: ${
             entry.name in broken
               ? `() => Promise.reject(new Error(${JSON.stringify(broken[entry.name])}))`
-              : `() => import(${JSON.stringify(join(entry.target, 'web.tsx'))})`
+              : `() => import(${JSON.stringify(slash(join(entry.target, 'web.tsx')))})`
           }`,
       )
       return `export const loaders = {${entries.join(',')}};`

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { below, inside, notOnWindows, slash } from '../lib/platform.ts'
+import { below, inside, notOnWindows, samePath, slash } from '../lib/platform.ts'
 
 it('compares Windows paths whatever separator or drive-letter case a watcher or Vite gives', () => {
   const root = 'C:\\Users\\me\\.ultimate\\extensions'
@@ -13,6 +13,7 @@ it('compares Windows paths whatever separator or drive-letter case a watcher or 
   expect(below(root, `${root}\\`, 'win32')).toBe('')
   expect(inside('C:/Users/me/.ultimate/extensions-old/x.ts', root, 'win32')).toBe(false)
   expect(inside('D:/Users/me/.ultimate/extensions/x.ts', root, 'win32')).toBe(false)
+  expect(samePath('c:/users/me/.ultimate/extensions/', root, 'win32')).toBe(true)
 })
 
 it('leaves POSIX paths exactly as they are, case and backslashes included', () => {

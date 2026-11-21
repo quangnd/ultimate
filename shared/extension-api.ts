@@ -32,7 +32,8 @@ export const actionRef = <Args, Result>(
 export const coreTier = /^export const tier = 'core'$/m
 
 export const extensionTests = 'test'
-export const inExtensionTests = (path: string) => path.split('/')[1] === extensionTests
+export const inExtensionTests = (path: string) =>
+  path.replaceAll('\\', '/').split('/')[1] === extensionTests
 
 export const defaultOff: readonly string[] = [
   'cloud',

@@ -14,6 +14,9 @@ export function below(file: string, root: string, platform = process.platform) {
 export const inside = (file: string, root: string, platform = process.platform) =>
   below(file, root, platform) !== undefined
 
+export const samePath = (a: string, b: string, platform = process.platform) =>
+  below(a, b, platform) === ''
+
 export function notOnWindows(feature: string, platform = process.platform) {
   if (platform === 'win32') throw new Error(`${feature} is not available on Windows yet`)
 }
