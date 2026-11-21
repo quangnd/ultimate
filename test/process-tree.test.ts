@@ -1,7 +1,10 @@
-import { expect, it } from 'vitest'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { expect, it, vi } from 'vitest'
 import { operatingSystem } from '../extensions/prompt/server.ts'
-import { groupTarget } from '../lib/process-group.ts'
+import { groupTarget, stopGroup } from '../lib/process-group.ts'
 import { parseTasklist, system32 } from '../lib/process-tree.ts'
+import { temp } from './helpers.ts'
 
 it('identifies a Windows process by image name and pid from tasklist output', () => {
   expect(parseTasklist('"Node.EXE","4321","Console","1","52,000 K"\r\n', 4321)).toBe(
@@ -30,4 +33,20 @@ it('names the leader itself as the Windows group and still refuses pids that nam
 it('tells the agent that Windows commands run in Git Bash', () => {
   expect(operatingSystem('win32', 'x64')).toContain('Git Bash')
   expect(operatingSystem('darwin', 'arm64')).toBe('macOS arm64')
+})
+
+it('forgets a stale pid file on Windows without signalling whatever process now has that pid', async () => {
+  const pidFile = join(await temp('ultimate-pid-'), 'group.pid')
+  await writeFile(pidFile, `${process.pid}\n`)
+  const kill = vi.spyOn(process, 'kill')
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' })
+  try {
+    await stopGroup(process.pid, { pidFile })
+  } finally {
+    Object.defineProperty(process, 'platform', platform)
+    kill.mockRestore()
+  }
+  expect(kill).not.toHaveBeenCalled()
+  await expect(readFile(pidFile)).rejects.toThrow('ENOENT')
 })

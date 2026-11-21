@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { meansNone } from '../lib/errors.ts'
+import { killTree } from '../lib/process-tree.ts'
 import { gitBashPath } from '../lib/shell.ts'
 import { pace, within } from '../lib/timers.ts'
 import { scriptedModel } from '../test/e2e/scripted-model.ts'
@@ -230,8 +231,7 @@ const checks: [string, (url: string) => Promise<string>][] = [
 
 async function stop() {
   if (supervisor?.pid && supervisor.exitCode === null) {
-    if (process.platform === 'win32')
-      spawnSync('taskkill', ['/T', '/F', '/PID', String(supervisor.pid)], { timeout: seconds(30) })
+    if (process.platform === 'win32') killTree(supervisor.pid)
     else supervisor.kill('SIGTERM')
     await until('the supervisor to exit', seconds(30), () => supervisor!.exitCode !== null).catch(
       () => supervisor!.kill('SIGKILL'),

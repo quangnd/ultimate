@@ -114,5 +114,5 @@ If it is missing, send back the terminal output and the doctor report.
 ## Known limits and risks
 
 - Unsigned `.exe` and `.node` files in `node_modules` may be blocked by company policy. This is the biggest unknown; the doctor tests it first.
-- Windows has no process groups like Linux: if you close the terminal window instead of pressing `Ctrl+C`, child processes can stay behind. Check Task Manager for stray `node.exe` and `bash.exe`, and stop Ultimate with `Ctrl+C`.
+- Windows has no process groups like Linux: if you close the terminal window instead of pressing `Ctrl+C`, child processes can stay behind. Ultimate does not stop them at the next start on Windows (it cannot prove which process is its own after the process id may have been reused). Check Task Manager for stray `node.exe` and `bash.exe`, and stop Ultimate with `Ctrl+C`.
 - Defender makes the first `pnpm install` and the first start slow.

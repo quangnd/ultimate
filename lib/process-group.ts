@@ -224,6 +224,7 @@ export async function stopGroup(
     const pidFileStillNamesLeader = pidFile && (await readPidFile(pidFile)) === pid
     const start = pidFileStillNamesLeader ? await text(`${pidFile}.start`) : undefined
     const pidFileStillProvesOwnership =
+      process.platform !== 'win32' &&
       pidFileStillNamesLeader &&
       (start === undefined
         ? identify(pid) !== undefined && groupAlive(pid)

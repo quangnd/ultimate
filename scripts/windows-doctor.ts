@@ -161,12 +161,22 @@ const checks: [string, () => Promise<Finding[]>][] = [
     'tasklist and taskkill (process identity and tree kill)',
     () =>
       windowsOnly(async () => {
-        const own = windowsIdentity(process.pid)
+        let own: string | undefined
+        let ownFailure: string | undefined
+        try {
+          own = windowsIdentity(process.pid)
+        } catch (error) {
+          ownFailure = (error as Error).message.split('\n')[0]
+        }
         const killer = await run(system32('taskkill.exe'), ['/?'])
         return [
           own?.endsWith(`:${process.pid}`)
             ? ['PASS', `tasklist sees this process as ${own}`]
-            : ['FAIL', String(own), 'Ultimate identifies its processes with tasklist.exe.'],
+            : [
+                'FAIL',
+                ownFailure ?? String(own),
+                'Ultimate identifies its processes with tasklist.exe, which is blocked or missing here.',
+              ],
           killer.ok
             ? ['PASS', 'taskkill.exe runs']
             : ['FAIL', killer.out, 'Ultimate stops process trees with taskkill.exe.'],
@@ -219,7 +229,7 @@ const checks: [string, () => Promise<Finding[]>][] = [
         ? [
             'WARN',
             'contains CRLF',
-            'Re-checkout so .gitattributes applies: git rm --cached -r . && git reset --hard',
+            'Clone the repository again into a new short folder so .gitattributes applies. Do not reset this clone if it holds changes you want to keep.',
           ]
         : ['PASS', 'LF'],
     ],
@@ -246,7 +256,10 @@ const checks: [string, () => Promise<Finding[]>][] = [
     'proxy and certificate environment',
     async () =>
       ['HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS', 'NODE_USE_SYSTEM_CA'].map(
-        (name): Finding => ['INFO', `${name}=${process.env[name] ?? '(unset)'}`],
+        (name): Finding => [
+          'INFO',
+          `${name}=${process.env[name]?.replace(/\/\/[^/@\s]*@/, '//***@') ?? '(unset)'}`,
+        ],
       ),
   ],
   [
