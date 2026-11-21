@@ -57,6 +57,8 @@ Ultimate runs on its own repository, opens your default browser at `http://127.0
 
 State (conversations, settings, the web bundle) lives in `%USERPROFILE%\.ultimate`. Pi shares `%USERPROFILE%\.pi\agent` for logins and models.
 
+To work on another project, give its folder as the first argument: `node C:\ult\bin\ultimate.ts C:\work\my-repo`. Your user extensions in `%USERPROFILE%\.ultimate\extensions` load for every project; a project's own `.ultimate\extensions` loads once you choose that project in Ultimate.
+
 ## Log in to a model
 
 - **Claude Code:** install the `claude` CLI and log in with it (`claude`). Ultimate uses it as the `claude-code` provider.

@@ -3,6 +3,7 @@ import { arch, release, tmpdir, type } from 'node:os'
 import { join, resolve, win32 } from 'node:path'
 import { exec } from '../lib/exec.ts'
 import { gitBashPath } from '../lib/shell.ts'
+import { system32, windowsIdentity } from '../lib/process-tree.ts'
 
 type Level = 'PASS' | 'WARN' | 'FAIL' | 'SKIP' | 'INFO'
 type Finding = [Level, string, string?]
@@ -153,6 +154,22 @@ const checks: [string, () => Promise<Finding[]>][] = [
                 'This is the WSL launcher. Ultimate finds Git Bash itself; do not rely on PATH for bash.',
               ]
             : ['PASS', first || 'no bash.exe on PATH (Ultimate finds Git Bash from git.exe)'],
+        ]
+      }),
+  ],
+  [
+    'tasklist and taskkill (process identity and tree kill)',
+    () =>
+      windowsOnly(async () => {
+        const own = windowsIdentity(process.pid)
+        const killer = await run(system32('taskkill.exe'), ['/?'])
+        return [
+          own?.endsWith(`:${process.pid}`)
+            ? ['PASS', `tasklist sees this process as ${own}`]
+            : ['FAIL', String(own), 'Ultimate identifies its processes with tasklist.exe.'],
+          killer.ok
+            ? ['PASS', 'taskkill.exe runs']
+            : ['FAIL', killer.out, 'Ultimate stops process trees with taskkill.exe.'],
         ]
       }),
   ],

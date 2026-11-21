@@ -225,6 +225,7 @@ try {
       ),
       ...model.env,
       HOME: userHome,
+      USERPROFILE: userHome,
       ULTIMATE_HOME: home,
       ULTIMATE_USER_HOME: userHome,
       ULTIMATE_PORT: '0',
