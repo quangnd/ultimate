@@ -11,7 +11,10 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
+import { chromium } from 'playwright-core'
+import { meansNone } from '../lib/errors.ts'
+import { gitBashPath } from '../lib/shell.ts'
 import { pace, within } from '../lib/timers.ts'
 import { scriptedModel } from '../test/e2e/scripted-model.ts'
 import type { Answer, Turn } from '../test/e2e/scripted-model.ts'
@@ -92,13 +95,17 @@ async function systemInfo(url: string) {
   const controller = new AbortController()
   const response = await fetch(url + '/api/events', { signal: controller.signal })
   const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
   let wire = ''
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) throw new Error('/api/events ended before a system event')
-      wire += new TextDecoder().decode(value)
-      const block = wire.split('\n\n').find((part) => part.startsWith('event: system'))
+      wire += decoder.decode(value, { stream: true })
+      const block = wire
+        .split('\n\n')
+        .slice(0, -1)
+        .find((part) => part.startsWith('event: system'))
       if (block) return JSON.parse(/^data: (.+)$/m.exec(block)![1]) as SystemInfo
     }
   } finally {
@@ -119,6 +126,15 @@ const toolResults = (entries: string, tool: string) =>
       new RegExp(`"toolName":"${tool}"[^}]*?"text":"((?:[^"\\\\]|\\\\.)*)"`, 'g'),
     ),
   ].map((match) => match[1])
+
+async function launchBrowser() {
+  for (const channel of ['chrome', 'msedge']) {
+    const browser = await chromium.launch({ channel, headless: true }).catch(meansNone)
+    if (browser) return browser
+  }
+  if (process.env.CI) throw new Error('no Chrome or Edge to launch on this runner')
+  return undefined
+}
 
 const checks: [string, (url: string) => Promise<string>][] = [
   [
@@ -162,6 +178,30 @@ const checks: [string, (url: string) => Promise<string>][] = [
         }
       }
       throw new Error(`${marker} is in none of the ${queue.length} scripts of the bundle`)
+    },
+  ],
+  [
+    'the page renders the user extension in a real browser',
+    async (url) => {
+      const browser = await launchBrowser()
+      if (!browser) return 'skipped: no Chrome or Edge found'
+      try {
+        const page = await browser.newPage()
+        const problems: string[] = []
+        page.on('pageerror', (error) => problems.push(error.message))
+        page.on('console', (message) => message.type() === 'error' && problems.push(message.text()))
+        await page.goto(url)
+        await page
+          .getByText(marker)
+          .first()
+          .waitFor({ timeout: seconds(90) })
+          .catch((error: unknown) => {
+            throw new Error(`${marker} never showed: ${describe(error)}\n${problems.join('\n')}`)
+          })
+        return `${marker} is visible`
+      } finally {
+        await browser.close()
+      }
     },
   ],
   [
@@ -212,6 +252,14 @@ try {
   mkdirSync(home)
   cpSync(fixture, join(userHome, '.ultimate/extensions/hello'), { recursive: true })
   writeFileSync(join(userHome, '.ultimate/onboarding.json'), '{"firstRunDone":true}\n')
+  if (process.platform === 'win32') {
+    const gitFolder = process.env.PATH?.split(delimiter).find((folder) =>
+      existsSync(join(folder, 'git.exe')),
+    )
+    const bash = gitFolder && gitBashPath({ env: { PATH: gitFolder } })
+    if (!bash) throw new Error(`Git Bash is not found from git.exe's folder ${gitFolder}`)
+    console.log(`ok   Git Bash found from git.exe's folder alone (${bash})`)
+  }
   run('git', ['init', '--quiet'])
   const identity = ['-c', 'user.name=smoke', '-c', 'user.email=smoke@example.com']
   writeFileSync(join(project, 'README.md'), '# smoke\n')

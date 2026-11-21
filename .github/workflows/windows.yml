@@ -30,6 +30,7 @@ jobs:
       - name: Fast test suite (information only)
         if: always()
         continue-on-error: true
+        timeout-minutes: 20
         run: pnpm exec vp test --maxWorkers=2
       - name: Upload smoke logs
         if: failure()
