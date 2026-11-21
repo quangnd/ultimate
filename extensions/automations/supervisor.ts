@@ -25,6 +25,7 @@ import {
 } from '../../lib/process-group.ts'
 import type { Group, GroupProcess } from '../../lib/process-group.ts'
 import { readSecret, validateName } from '../../lib/secrets.ts'
+import { notOnWindows } from '../../lib/platform.ts'
 import { Standing, SubagentsApi } from '../subagents/api.ts'
 import { MessagesApi } from '../messages/api.ts'
 import { WorkspacesApi } from '../workspaces/api.ts'
@@ -559,6 +560,7 @@ export function supervisor(
       if (!value) throw new Error(`Missing secret ${name}; add it in Secrets (⌘K → Secrets)`)
       env[name] = value
     }
+    notOnWindows('Script automations')
     await access(runPath(sub), constants.X_OK)
     if (reloadStableProcessState.closing) throw new Error('Automation supervisor is closing')
     let group: Group

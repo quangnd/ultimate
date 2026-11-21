@@ -26,6 +26,7 @@ import { watchSteer } from '../../lib/steer.ts'
 import { within as withinDeadline } from '../../lib/timers.ts'
 import { safeToRerun } from '../../lib/replay.ts'
 import { errnoCode, inProcess, ignoring, meansNone } from '../../lib/errors.ts'
+import { notOnWindows } from '../../lib/platform.ts'
 
 export async function playwrightChromiums(
   home: string,
@@ -49,6 +50,7 @@ export async function playwrightChromiums(
 }
 
 export async function browserBinary() {
+  notOnWindows('The browser tool')
   const candidates = [
     process.env.ULTIMATE_CHROMIUM,
     '/usr/bin/chromium',

@@ -33,6 +33,7 @@ import { git, isolatable } from '../../lib/git.ts'
 import { rebuiltOnOpen, meansNone, overshadowed } from '../../lib/errors.ts'
 import { spawnGroup, stopGroup, sweepPidFiles } from '../../lib/process-group.ts'
 import { within } from '../../lib/timers.ts'
+import { notOnWindows } from '../../lib/platform.ts'
 import type { Group, GroupProcess } from '../../lib/process-group.ts'
 import { Previews } from '../conversations/api.ts'
 import { ListAction } from './refs.ts'
@@ -404,6 +405,7 @@ export default function instanceExtension(
     let pendingHome: string | undefined
     try {
       context.abortSignal?.throwIfAborted()
+      notOnWindows('Instance previews')
       if ([...instances.values()].filter(live).length + starts.pending >= 3)
         throw new Error('At most three instances may run at once')
       starts.pending++

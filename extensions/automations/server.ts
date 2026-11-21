@@ -26,6 +26,7 @@ import type { EventRecord } from '../../shared/events.ts'
 import { implementAction } from '../../lib/actions.ts'
 import { actingAs } from '../../lib/acting-as.ts'
 import { errnoCode, isMissing } from '../../lib/errors.ts'
+import { notOnWindows } from '../../lib/platform.ts'
 import { discoverAgents } from '../../lib/agents.ts'
 import { validateName } from '../../lib/secrets.ts'
 import { groupAlive } from '../../lib/process-group.ts'
@@ -269,6 +270,7 @@ function backend(host: ExtensionHost) {
       )
     }
     if ((args.action === 'resume' || args.action === 'run') && sub.script) {
+      notOnWindows('Script automations')
       try {
         await access(runPath(sub), constants.X_OK)
       } catch {
