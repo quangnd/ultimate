@@ -335,13 +335,17 @@ export async function createWeb(options: {
   if (stale) inProcess('the next start checks the bundle again', buildUntilFreshSerially())
 
   return {
-    info: () => ({
-      id: manifest?.id ?? '',
-      changed: changedFiles,
-      ...(building ? { building: true } : {}),
-      ...(left.length ? { left } : {}),
-      ...(failed ? { error: failed } : {}),
-    }),
+    info: () => {
+      if (stale && !building && options.pages() > 0)
+        inProcess('a page asking again rebuilds it', buildUntilFreshSerially())
+      return {
+        id: manifest?.id ?? '',
+        changed: changedFiles,
+        ...(building ? { building: true } : {}),
+        ...(left.length ? { left } : {}),
+        ...(failed ? { error: failed } : {}),
+      }
+    },
     facets: () => webFacets(ultimateRoot, projectRoot, userHome),
     async rebuild() {
       stale = true
