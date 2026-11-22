@@ -332,6 +332,8 @@ export async function createWeb(options: {
     )
   }
 
+  if (stale) inProcess('the next start checks the bundle again', buildUntilFreshSerially())
+
   return {
     info: () => ({
       id: manifest?.id ?? '',

@@ -10,9 +10,11 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
+import type { Browser, Page } from 'playwright-core'
 import { meansNone } from '../lib/errors.ts'
 import { killTree } from '../lib/process-tree.ts'
 import { gitBashPath } from '../lib/shell.ts'
@@ -68,6 +70,7 @@ const fixture = process.env.ULTIMATE_SMOKE_FIXTURE ?? join(clone, 'test/fixtures
 let output = ''
 let status = 0
 let supervisor: ReturnType<typeof spawn> | undefined
+let tabBrowser: Browser | undefined
 let corePid: number | undefined
 const alive = (pid: number) => {
   try {
@@ -165,6 +168,8 @@ const checks: [string, (url: string) => Promise<string>][] = [
       if (!hello.facets.server || !hello.facets.web)
         throw new Error(`facets ${JSON.stringify(hello.facets)}`)
       if (hello.server?.error) throw new Error(`server facet: ${hello.server.error}`)
+      if (!hello.server?.tools.some((tool) => tool.name === 'hello'))
+        throw new Error(`hello tool not registered: ${JSON.stringify(hello.server)}`)
       const html = await (await get(url + '/')).text()
       const queue = [...html.matchAll(/(?:src|href)="(\/[^"]+\.js)"/g)].map((m) => url + m[1])
       const seen = new Set(queue)
@@ -229,7 +234,7 @@ const checks: [string, (url: string) => Promise<string>][] = [
   ],
 ]
 
-async function stop() {
+async function halt() {
   if (supervisor?.pid && supervisor.exitCode === null) {
     if (process.platform === 'win32') killTree(supervisor.pid)
     else supervisor.kill('SIGTERM')
@@ -237,7 +242,12 @@ async function stop() {
       () => supervisor!.kill('SIGKILL'),
     )
   }
-  const leaked = [supervisor?.pid, corePid].filter((pid): pid is number => !!pid && alive(pid))
+  return [supervisor?.pid, corePid].filter((pid): pid is number => !!pid && alive(pid))
+}
+
+async function stop() {
+  await tabBrowser?.close()
+  const leaked = await halt()
   if (logPath && existsSync(join(home, 'supervisor.log')))
     copyFileSync(join(home, 'supervisor.log'), logPath + '.supervisor.log')
   rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })
@@ -245,12 +255,76 @@ async function stop() {
   if (existsSync(root)) throw new Error(`could not remove ${root}`)
 }
 
+async function freePort() {
+  const probe = createServer()
+  await new Promise<void>((done) => probe.listen(0, '127.0.0.1', done))
+  const { port } = probe.address() as { port: number }
+  await new Promise((done) => probe.close(done))
+  return port
+}
+
+async function start(port: number) {
+  output = ''
+  supervisor = spawn(process.execPath, [join(clone, 'bin/ultimate.ts'), project, '--no-open'], {
+    cwd: clone,
+    env: {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !key.startsWith('ULTIMATE_')),
+      ),
+      ...model.env,
+      HOME: userHome,
+      USERPROFILE: userHome,
+      ULTIMATE_HOME: home,
+      ULTIMATE_USER_HOME: userHome,
+      ULTIMATE_PORT: String(port),
+      ULTIMATE_NO_OPEN: '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const collect = (chunk: Buffer) => {
+    output += chunk
+    if (logPath) appendFileSync(logPath, chunk)
+  }
+  supervisor.stdout!.on('data', collect)
+  supervisor.stderr!.on('data', collect)
+  supervisor.on('exit', (code) => (output += `\n[supervisor exited with ${code}]\n`))
+  await until('"Ultimate: http://" in the supervisor output', seconds(120), () =>
+    /Ultimate: http:\/\/\S+/.test(output),
+  )
+  const url = /Ultimate: (http:\/\/\S+)/.exec(output)![1]
+  console.log(`supervisor up at ${url}`)
+  return url
+}
+
+async function leaveTabOpen(url: string) {
+  tabBrowser = await launchBrowser()
+  if (!tabBrowser) return undefined
+  const tab = await tabBrowser.newPage()
+  await tab.goto(url)
+  await tab
+    .locator('textarea')
+    .first()
+    .waitFor({ timeout: seconds(90) })
+  if (await tab.getByText(marker).count())
+    throw new Error(`${marker} shown before the extension exists`)
+  return tab
+}
+
+async function tabShowsExtensionAfterRestart(tab: Page) {
+  await tab
+    .getByText(marker)
+    .first()
+    .waitFor({ timeout: seconds(90) })
+    .catch((error: unknown) => {
+      throw new Error(`the tab left open never showed ${marker}: ${describe(error)}`)
+    })
+}
+
 const model = await scriptedModel(answer)
 try {
   mkdirSync(project)
   mkdirSync(join(userHome, '.ultimate/extensions'), { recursive: true })
   mkdirSync(home)
-  cpSync(fixture, join(userHome, '.ultimate/extensions/hello'), { recursive: true })
   writeFileSync(join(userHome, '.ultimate/onboarding.json'), '{"firstRunDone":true}\n')
   if (process.platform === 'win32') {
     const gitFolder = process.env.PATH?.split(delimiter).find((folder) =>
@@ -265,35 +339,20 @@ try {
   writeFileSync(join(project, 'README.md'), '# smoke\n')
   run('git', ['add', '.'])
   run('git', [...identity, 'commit', '--quiet', '-m', 'first'])
-  supervisor = spawn(process.execPath, [join(clone, 'bin/ultimate.ts'), project, '--no-open'], {
-    cwd: clone,
-    env: {
-      ...Object.fromEntries(
-        Object.entries(process.env).filter(([key]) => !key.startsWith('ULTIMATE_')),
-      ),
-      ...model.env,
-      HOME: userHome,
-      USERPROFILE: userHome,
-      ULTIMATE_HOME: home,
-      ULTIMATE_USER_HOME: userHome,
-      ULTIMATE_PORT: '0',
-      ULTIMATE_NO_OPEN: '1',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  const collect = (chunk: Buffer) => {
-    output += chunk
-    if (logPath) appendFileSync(logPath, chunk)
-  }
-  supervisor.stdout!.on('data', collect)
-  supervisor.stderr!.on('data', collect)
-  supervisor.on('exit', (code) => (output += `\n[supervisor exited with ${code}]\n`))
   if (logPath) writeFileSync(logPath, '')
-  await until('"Ultimate: http://" in the supervisor output', seconds(120), () =>
-    /Ultimate: http:\/\/\S+/.test(output),
+  const port = await freePort()
+  const firstUrl = await start(port)
+  const tab = await leaveTabOpen(firstUrl)
+  console.log(
+    `ok   first start without the user extension (${tab ? 'tab left open' : 'no browser'})`,
   )
-  const url = /Ultimate: (http:\/\/\S+)/.exec(output)![1]
-  console.log(`supervisor up at ${url}`)
+  await halt()
+  cpSync(fixture, join(userHome, '.ultimate/extensions/hello'), { recursive: true })
+  const url = await start(port)
+  if (tab) {
+    await tabShowsExtensionAfterRestart(tab)
+    console.log(`ok   the tab left open shows ${marker} after the restart, without a reload`)
+  }
   for (const [name, check] of checks) {
     const started = Date.now()
     const detail = await within(seconds(300), check(url), () => new Error('check timed out'))

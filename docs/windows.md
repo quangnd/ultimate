@@ -1,6 +1,6 @@
 # Ultimate on Windows (native, phase 0)
 
-This is the install and first-run guide for running Ultimate directly on Windows 11 (no WSL, no admin rights). It is a first port: the core works, several features are switched off. A GitHub Actions job (`.github/workflows/windows.yml`) runs the same smoke test on a Windows runner on every push, so a break shows up there first.
+This is the install and first-run guide for running Ultimate directly on Windows 11 (no WSL, no admin rights). It is a first port: the core works, several features are switched off. A GitHub Actions job (`.github/workflows/windows.yml`) runs the same smoke test on a Windows runner on every push, so a break shows up there first. The smoke starts Ultimate, leaves a browser tab open, adds the `hello` extension, restarts and expects the tab to show it.
 
 ## What works and what does not (phase 0)
 
@@ -97,19 +97,24 @@ The `bash.exe` in `System32` is the WSL launcher; do not point at it.
 
 ## Prove that user extensions load
 
-`test\fixtures\windows-hello` is a tiny extension: a `hello` tool and a marker text in the status line.
+`test\fixtures\windows-hello` is a tiny extension: a `hello` tool and a marker text in the status line. In PowerShell, from the clone:
 
 ```text
-Copy-Item -Recurse test\fixtures\windows-hello $env:USERPROFILE\.ultimate\extensions\hello
+New-Item -ItemType Directory -Force $env:USERPROFILE\.ultimate\extensions\hello | Out-Null
+Copy-Item -Recurse -Force test\fixtures\windows-hello\* $env:USERPROFILE\.ultimate\extensions\hello
+Get-ChildItem $env:USERPROFILE\.ultimate\extensions\hello
 ```
 
-(In PowerShell; the target folder must end up named `hello`.) Stop `pnpm start` and start it again. Then:
+The last command must list `README.md`, `server.ts` and `web.tsx` directly. If it lists a `windows-hello` folder instead, the files went one level too deep (this happens when `hello` already existed and you copied the folder itself): delete `%USERPROFILE%\.ultimate\extensions\hello` and run the three commands again.
 
-- The bottom status line shows `hello-user-extension-marker`.
-- Ask the agent "Use the hello tool". The tool result reads `hello from a user extension`.
-- `Ctrl+K`, **Extensions…** lists `hello` as a user extension.
+Stop `pnpm start` with `Ctrl+C` and start it again. Then:
 
-If it is missing, send back the terminal output and the doctor report.
+- The bottom status line shows `hello-user-extension-marker`. A browser tab that was already open switches to the new web bundle by itself within a minute or so; if not, reload the tab (`F5`).
+- `Ctrl+K`, **Extensions…**, open `hello`: it is a user extension with a server and a web facet, and its tool list shows `hello`. This is the check for the server side. Any `server.ts` error is printed on that row.
+
+Do not test the `hello` tool by asking @ultimate or a side chat to call it. @ultimate has a fixed tool list (`agents/ultimate.md`) and a side chat is a copy of @ultimate, so neither has user extension tools, and that is not a bug. Conversations whose agent definition has no `tools:` list get every extension tool: the coordinator of a branch, and the subagents `worker`, `scout` and the like. A branch needs worktrees, which are limited on Windows (see above), so treat calling `hello` from a branch as unverified; the Extensions panel is the check.
+
+If it is missing, send back the terminal output, the doctor report and the output of `Get-ChildItem -Recurse $env:USERPROFILE\.ultimate\extensions\hello`.
 
 ## Known limits and risks
 
