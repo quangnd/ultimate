@@ -105,7 +105,7 @@ Copy-Item -Recurse -Force test\fixtures\windows-hello\* $env:USERPROFILE\.ultima
 Get-ChildItem $env:USERPROFILE\.ultimate\extensions\hello
 ```
 
-The last command must list `README.md`, `server.ts` and `web.tsx` directly. If it lists a `windows-hello` folder instead, the files went one level too deep (this happens when `hello` already existed and you copied the folder itself): delete `%USERPROFILE%\.ultimate\extensions\hello` and run the three commands again.
+The last command must list `README.md`, `server.ts` and `web.solid.tsx` directly. If it lists a `windows-hello` folder instead, the files went one level too deep (this happens when `hello` already existed and you copied the folder itself): delete `%USERPROFILE%\.ultimate\extensions\hello` and run the three commands again.
 
 Stop `pnpm start` with `Ctrl+C` and start it again. Then:
 
