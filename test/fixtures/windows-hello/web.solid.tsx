@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { defineWebExtension } from '@/sdk/solid'
 
 const Marker = () => <span>hello-user-extension-marker</span>
