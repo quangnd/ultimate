@@ -1,5 +1,5 @@
 import type { ConversationId } from '@earendil-works/pi-durable'
-import { LoaderCircle, Mic, Square, X } from '@lucide/solid'
+import { ArrowUp, Check, LoaderCircle, Mic, X } from '@lucide/solid'
 import { createEffect, createSignal, For, Show } from 'solid-js'
 import { Button } from '@/components/ui/button.solid.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.solid.tsx'
@@ -7,6 +7,7 @@ import {
   api,
   errorMessage,
   events,
+  formatKeys,
   insertIntoComposer,
   useAction,
   useConversationId,
@@ -16,18 +17,65 @@ import {
 } from '@/sdk/solid'
 import { meansNone } from '../../lib/errors.ts'
 import { deadline } from '../../lib/timers.ts'
-import { StatusAction, TranscribeAction } from './refs.ts'
+import { ShortcutAction, StatusAction, TranscribeAction } from './refs.ts'
+
+const defaultShortcut = 'mod+alt+v'
+
+type VoiceControls = { toggle: () => void; cancel: () => void; recording: boolean }
+
+const controlsByConversation = new Map<ConversationId, VoiceControls>()
+let toggleShortcut = defaultShortcut
+
+export const currentShortcut = () => toggleShortcut
+const setShortcut = (keys: string) => void (toggleShortcut = keys)
+
+export function registerVoice(id: ConversationId, controls: VoiceControls): () => void {
+  controlsByConversation.set(id, controls)
+  return () => void controlsByConversation.delete(id)
+}
+
+export const controlsOf = (id: ConversationId | undefined) =>
+  id === undefined ? undefined : controlsByConversation.get(id)
+
+export function unsupported() {
+  if (!window.isSecureContext) return 'Voice needs HTTPS: open Ultimate over its tailnet URL'
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined')
+    return 'This browser cannot record audio'
+  return undefined
+}
+
+export function entersSend(
+  event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey' | 'isComposing'>,
+  targetConversation: string | undefined,
+  id: ConversationId,
+  recording: boolean,
+) {
+  if (!recording || event.key !== 'Enter' || event.isComposing) return false
+  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false
+  return targetConversation === String(id)
+}
+
+function submitComposerAfterRender(id: ConversationId) {
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLTextAreaElement>(`textarea[data-conversation="${id}"]`)
+      ?.closest('form')
+      ?.querySelector<HTMLButtonElement>('button[type="submit"]')
+      ?.click()
+  })
+}
 
 const recordingMimeOrder = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
 const barShapes = [0.55, 1, 0.8, 0.45]
 const buttonSize = 'size-7 rounded-lg pointer-coarse:size-9'
+const hideWhileRecording = `[data-ui="composer"]:has([data-voice-recording]) :is(button[type="submit"], [data-voice-live]) { display: none }`
 const keepEditorFocus = (event: PointerEvent) => event.preventDefault()
 
 type Recording = {
   stream: MediaStream
   audio?: AudioContext
   started: number
-  stop: (source?: string) => void
+  stop: (source?: string, send?: boolean) => void
 }
 
 function blockedMicrophone(reason: string) {
@@ -41,19 +89,17 @@ function blockedMicrophone(reason: string) {
   return 'Microphone access is blocked: allow it in the browser’s site settings'
 }
 
-function unsupported() {
-  if (!window.isSecureContext) return 'Voice needs HTTPS: open Ultimate over its tailnet URL'
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined')
-    return 'This browser cannot record audio'
-  return undefined
-}
-
 async function base64(blob: Blob) {
   const bytes = new Uint8Array(await blob.arrayBuffer())
   let binary = ''
   for (let at = 0; at < bytes.length; at += 0x8000)
     binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
   return btoa(binary)
+}
+
+function shortcutHint(keys: string) {
+  const parts = formatKeys(keys)[0]
+  return parts.join(parts.every((part) => part.length === 1) ? '' : '+')
 }
 
 const clock = (ms: number) => {
@@ -104,6 +150,8 @@ function Level(props: { recording: Recording }) {
 export function VoiceButton() {
   const id = useConversationId()
   const status = useAction(StatusAction)
+  const shortcut = useAction(ShortcutAction)
+  const chosenShortcut = () => shortcut.data() ?? defaultShortcut
   useEvent('secrets:changed', () => void status.refetch())
   const unavailable = unsupported()
   const missingKey = () => {
@@ -125,20 +173,28 @@ export function VoiceButton() {
     setRecording(undefined)
     return cancelCapture
   })
+  createEffect(chosenShortcut, setShortcut)
   createEffect(recording, (active) => active && deadline(5 * 60_000, () => active.stop()))
   createEffect(error, (message) =>
     message ? deadline(8000, () => setError(undefined)) : undefined,
   )
 
-  async function transcribe(conversation: ConversationId, blob: Blob, source: string) {
+  async function transcribe(
+    conversation: ConversationId,
+    blob: Blob,
+    source: string,
+    send: boolean,
+  ) {
     setTranscribing(true)
     try {
       const args = { audio: await base64(blob), mimeType: blob.type }
       const { text } = await writingAs(source, () =>
         api.action(TranscribeAction, args, { conversationId: conversation }),
       )
-      if (text) writingAs(source, () => insertIntoComposer(conversation, text))
-      else setError('No speech heard')
+      if (text) {
+        writingAs(source, () => insertIntoComposer(conversation, text))
+        if (send) submitComposerAfterRender(conversation)
+      } else setError('No speech heard')
     } catch (failure) {
       setError(errorMessage(failure))
     } finally {
@@ -166,9 +222,11 @@ export function VoiceButton() {
       const audio = typeof AudioContext === 'undefined' ? undefined : new AudioContext()
       const chunks: Blob[] = []
       let source = 'app'
-      const stop = (requestedBy = 'app') => {
+      let send = false
+      const stop = (requestedBy = 'app', sendAfter = false) => {
         if (recorder.state === 'inactive') return
         source = requestedBy
+        send = sendAfter
         recorder.stop()
       }
       const collect = ({ data }: BlobEvent) => {
@@ -179,7 +237,7 @@ export function VoiceButton() {
         setRecording(undefined)
         if (conversation !== undefined && chunks.length) {
           const blob = new Blob(chunks, { type: recorder.mimeType || type || 'audio/webm' })
-          void transcribe(conversation, blob, source)
+          void transcribe(conversation, blob, source, send)
         }
       }
       signal.addEventListener(
@@ -216,6 +274,45 @@ export function VoiceButton() {
     else return start()
     return undefined
   }
+
+  function cancel() {
+    cancelCapture()
+    setRecording(undefined)
+  }
+
+  function toggle() {
+    if (transcribing() || status.loading()) return
+    const active = recording()
+    if (active) active.stop('person')
+    else void pressMic()
+  }
+
+  createEffect(id, (conversation) =>
+    conversation === undefined
+      ? undefined
+      : registerVoice(conversation, {
+          toggle,
+          cancel,
+          get recording() {
+            return !!recording()
+          },
+        }),
+  )
+
+  createEffect(id, (conversation) => {
+    if (conversation === undefined) return undefined
+    const captureEnterToSend = (event: KeyboardEvent) => {
+      const target = event.target
+      const targetConversation =
+        target instanceof HTMLTextAreaElement ? target.dataset.conversation : undefined
+      if (!entersSend(event, targetConversation, conversation, !!recording())) return
+      event.preventDefault()
+      event.stopPropagation()
+      recording()?.stop('person', true)
+    }
+    window.addEventListener('keydown', captureEnterToSend, true)
+    return () => window.removeEventListener('keydown', captureEnterToSend, true)
+  })
 
   return (
     <Show
@@ -256,21 +353,20 @@ export function VoiceButton() {
               </Show>
             </TooltipTrigger>
             <TooltipContent>
-              {blocked() ?? 'Voice input: tap to record, tap again to transcribe'}
+              {blocked() ??
+                `Voice input: tap to record, tap again to transcribe · ${shortcutHint(chosenShortcut())}`}
             </TooltipContent>
           </Tooltip>
         </div>
       }
     >
       {(active) => (
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center gap-1" data-voice-recording>
+          <style>{hideWhileRecording}</style>
           <Button
             aria-label="Cancel recording"
             class={`${buttonSize} text-muted-foreground`}
-            onClick={() => {
-              cancelCapture()
-              setRecording(undefined)
-            }}
+            onClick={cancel}
             onPointerDown={keepEditorFocus}
             size={null}
             title="Cancel"
@@ -284,15 +380,26 @@ export function VoiceButton() {
             <Level recording={active()} />
           </span>
           <Button
-            aria-label="Stop and transcribe"
-            class={`${buttonSize} bg-error text-white hover:bg-error/90`}
+            aria-label="Done: put the transcript in the composer"
+            class={`${buttonSize} text-foreground`}
             onClick={(_event, details) => active().stop(details.source)}
             onPointerDown={keepEditorFocus}
             size={null}
-            title="Stop and transcribe"
+            title="Done: transcribe into the composer"
+            variant="ghost"
+          >
+            <Check class="size-4" />
+          </Button>
+          <Button
+            aria-label="Send"
+            class={`${buttonSize} bg-primary text-primary-foreground hover:bg-primary/90`}
+            onClick={(_event, details) => active().stop(details.source, true)}
+            onPointerDown={keepEditorFocus}
+            size={null}
+            title="Send (Enter)"
             variant={null}
           >
-            <Square class="size-3 fill-current" />
+            <ArrowUp class="size-4" />
           </Button>
         </div>
       )}
