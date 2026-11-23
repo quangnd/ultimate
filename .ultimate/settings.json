@@ -20,8 +20,7 @@
   "lander": {
     "checks": [
       { "command": "pnpm check", "timeout": 120 },
-      { "command": "pnpm test --maxWorkers=4", "timeout": 600 },
-      { "command": "pnpm test:e2e --maxWorkers=4 --reporter=verbose", "timeout": 600 }
+      { "command": "VITEST_MAX_WORKERS=4 pnpm test:affected", "timeout": 1500 }
     ],
     "push": "origin"
   }
