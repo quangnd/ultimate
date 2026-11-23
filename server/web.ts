@@ -206,8 +206,7 @@ export async function createWeb(options: {
       if ('inputs' in result) break
       const file = result.error.file
       const facet =
-        file &&
-        targets.find((entry) => webFacet(entry.files) && inside(file, entry.target))
+        file && targets.find((entry) => webFacet(entry.files) && inside(file, entry.target))
       if (!facet || facet.name in broken) {
         failed = `The web UI did not build${file ? ` (${relative(ultimateRoot, file)})` : ''}: ${result.error.message}`
         options.notice(failed)
