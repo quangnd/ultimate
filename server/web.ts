@@ -10,9 +10,9 @@ import { inProcess, ignoring, isMissing } from '../lib/errors.ts'
 import { debounce } from '../lib/timers.ts'
 import { writeTextAtomically } from '../lib/json-file.ts'
 import { below, inside, samePath, slash } from '../lib/platform.ts'
-import { discoverExtensions } from '../lib/discovery.ts'
+import { discoverExtensions, webFacet } from '../lib/discovery.ts'
 import { discoveryRoots } from '../lib/project-paths.ts'
-import { projectSettings } from '../lib/project-setup.ts'
+import { projectSettings, useProjectSetup } from '../lib/project-setup.ts'
 import { extensionSettingsFiles } from '../lib/extension-settings.ts'
 import type { Watch } from './extensions.ts'
 import { watchRoots } from './watch-roots.ts'
@@ -23,6 +23,7 @@ interface Manifest {
   at: number
   inputs: string[]
   facets: string[]
+  trusted: boolean
   broken: string[]
   retired: Record<string, number>
 }
@@ -65,9 +66,10 @@ export async function appIdentity(projectRoot: string, userHome: string) {
 }
 
 export async function webFacets(ultimateRoot: string, projectRoot: string, userHome: string) {
-  return (await discoverExtensions(ultimateRoot, projectRoot, userHome))
-    .filter((entry) => entry.enabled && entry.files.includes('web.tsx'))
-    .map((entry) => join(entry.path, 'web.tsx'))
+  return (await discoverExtensions(ultimateRoot, projectRoot, userHome)).flatMap((entry) => {
+    const facet = webFacet(entry.files)
+    return entry.enabled && facet ? [join(entry.path, facet)] : []
+  })
 }
 
 const escapeAttribute = (text: string) =>
@@ -94,11 +96,7 @@ export async function createWeb(options: {
     join(userHome, '.ultimate/trust.json'),
   ]
   const webRoot = join(ultimateRoot, 'web')
-  const always = [
-    join(ultimateRoot, 'vite.config.ts'),
-    join(ultimateRoot, 'pnpm-lock.yaml'),
-    ...settings,
-  ]
+  const always = [join(ultimateRoot, 'vite.config.ts'), join(ultimateRoot, 'pnpm-lock.yaml')]
   let manifest = await readFile(join(folder, 'manifest.json'), 'utf8').then(
     (text) => {
       try {
@@ -122,12 +120,34 @@ export async function createWeb(options: {
   const scheduleUpdate = debounce(150, () => void buildUntilFreshSerially())
   const closing = new AbortController()
 
-  async function fresh(current: Manifest) {
+  async function builtWithCurrentSettings(current: Manifest) {
     const facets = await webFacets(ultimateRoot, projectRoot, userHome)
+    return (
+      current.trusted === useProjectSetup(projectRoot, userHome) &&
+      facets.join('\0') === current.facets.join('\0')
+    )
+  }
+
+  async function fresh(current: Manifest) {
     const retryPossiblyFixedFacets = current.broken?.length
-    if (retryPossiblyFixedFacets || facets.join('\0') !== current.facets.join('\0')) return false
+    if (retryPossiblyFixedFacets || !(await builtWithCurrentSettings(current))) return false
     const { at: buildStartedEpochMs } = current
     return !(await changedSince(current.inputs, buildStartedEpochMs))
+  }
+
+  async function settingsChanged(file: string) {
+    try {
+      identity = await appIdentity(projectRoot, userHome)
+      if (!manifest || !(await builtWithCurrentSettings(manifest))) touched(file)
+    } catch (error) {
+      options.notice(`${file} could not be read: ${String(error)}`)
+    }
+  }
+
+  function settingsSaved(file: string) {
+    const work = settingsChanged(file)
+    inProcess('a restart compares the settings with the manifest again', work)
+    return work
   }
 
   async function savedSince(files: string[], at: number) {
@@ -156,6 +176,7 @@ export async function createWeb(options: {
 
   async function buildOnce() {
     const buildStartedEpochMs = Date.now()
+    const trusted = useProjectSetup(projectRoot, userHome)
     const facets = await webFacets(ultimateRoot, projectRoot, userHome)
     const targets = await discoverExtensions(ultimateRoot, projectRoot, userHome)
     const outDir = join(folder, 'next')
@@ -186,7 +207,7 @@ export async function createWeb(options: {
       const file = result.error.file
       const facet =
         file &&
-        targets.find((entry) => entry.files.includes('web.tsx') && inside(file, entry.target))
+        targets.find((entry) => webFacet(entry.files) && inside(file, entry.target))
       if (!facet || facet.name in broken) {
         failed = `The web UI did not build${file ? ` (${relative(ultimateRoot, file)})` : ''}: ${result.error.message}`
         options.notice(failed)
@@ -194,8 +215,9 @@ export async function createWeb(options: {
       }
       broken[facet.name] = result.error.message
       brokenFolders.push(facet.target)
-      left.push({ file: join(facet.path, 'web.tsx'), error: result.error.message })
-      options.notice(`${join(facet.path, 'web.tsx')} did not build: ${result.error.message}`)
+      const facetFile = join(facet.path, webFacet(facet.files)!)
+      left.push({ file: facetFile, error: result.error.message })
+      options.notice(`${facetFile} did not build: ${result.error.message}`)
     }
     const allFileNamesAndContentsHash = createHash('sha256')
     for (const file of (await readdir(outDir, { recursive: true })).toSorted()) {
@@ -226,6 +248,7 @@ export async function createWeb(options: {
         ]),
       ],
       facets,
+      trusted,
       broken: brokenFolders,
       retired: {},
     }
@@ -240,8 +263,10 @@ export async function createWeb(options: {
     identity = await appIdentity(projectRoot, userHome)
     inputs = new Set(next.inputs.map((file) => slash(file)))
     brokenRoots = next.broken
-    const sourceSavedDuringBuild = await savedSince(result.inputs, buildStartedEpochMs)
-    if (sourceSavedDuringBuild) stale = true
+    const staleOnPublish =
+      (await savedSince(result.inputs, buildStartedEpochMs)) ||
+      !(await builtWithCurrentSettings(next))
+    if (staleOnPublish) stale = true
     for (const name of await readdir(folder))
       if (name !== id && !name.startsWith('.') && name !== 'manifest.json' && !retired.has(name))
         await rm(join(folder, name), { recursive: true, force: true })
@@ -284,6 +309,7 @@ export async function createWeb(options: {
   }
   const tests = (file: string) => roots.some((root) => inExtensionTests(below(file, root) ?? ''))
   const onChange = (file: string) => {
+    if (settings.some((known) => samePath(file, known))) return settingsSaved(file)
     if (slash(file).includes('/node_modules/') || tests(file)) return
     if (
       inside(file, webRoot) ||
@@ -303,15 +329,16 @@ export async function createWeb(options: {
       )
   }
   const onStructure = (file: string) => {
+    if (settings.some((known) => samePath(file, known))) return settingsSaved(file)
     if (slash(file).includes('/node_modules/') || tests(file)) return
-    if (inside(file, webRoot) || roots.some((root) => inside(file, root))) touched(file)
+    if (inside(file, webRoot) || roots.some((root) => inside(file, root))) return touched(file)
   }
   const structure = ['add', 'unlink', 'addDir', 'unlinkDir'] as const
   const unwatch = options.watch((watcher) => {
     watcher.add([...roots, ...settings, webRoot])
     const stopRoots = watchRoots([...roots, ...settings], (root) => {
       watcher.add(root)
-      touched(root)
+      return settings.includes(root) ? settingsSaved(root) : touched(root)
     })
     watcher.on('change', onChange)
     for (const event of structure) watcher.on(event, onStructure)
@@ -332,21 +359,18 @@ export async function createWeb(options: {
     )
   }
 
-  if (stale) inProcess('the next start checks the bundle again', buildUntilFreshSerially())
-
   return {
-    info: () => {
-      if (stale && !building && options.pages() > 0)
-        inProcess('a page asking again rebuilds it', buildUntilFreshSerially())
-      return {
-        id: manifest?.id ?? '',
-        changed: changedFiles,
-        ...(building ? { building: true } : {}),
-        ...(left.length ? { left } : {}),
-        ...(failed ? { error: failed } : {}),
-      }
-    },
+    info: () => ({
+      id: manifest?.id ?? '',
+      changed: changedFiles,
+      ...(building ? { building: true } : {}),
+      ...(left.length ? { left } : {}),
+      ...(failed ? { error: failed } : {}),
+    }),
     facets: () => webFacets(ultimateRoot, projectRoot, userHome),
+    pageConnected() {
+      if (manifest && stale) scheduleUpdate()
+    },
     async rebuild() {
       stale = true
       if (options.pages() > 0 || building) await buildUntilFreshSerially()
