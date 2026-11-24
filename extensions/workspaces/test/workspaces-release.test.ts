@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fauxProvider } from '@earendil-works/pi-ai/providers/faux'
 import { afterEach, expect, it } from 'vitest'
@@ -59,12 +59,12 @@ async function fixture() {
     await opened.close()
     await removeTemp(root)
   })
-  async function workspace() {
+  async function workspace(cwd = source) {
     const conversation = await opened.harness.createConversation(
       {
         ownership: { kind: 'ownerless' },
         agent: { model: { provider: 'faux', modelId: 'faux-1' } },
-        init: (tx, id) => service.create(tx, id, source).then(() => undefined),
+        init: (tx, id) => service.create(tx, id, cwd).then(() => undefined),
       },
       context,
     )
@@ -89,4 +89,31 @@ it('releases a workspace whose folder was deleted next to a healthy one', async 
   const listed = await git(source, 'worktree', 'list', '--porcelain')
   expect(listed).not.toContain(missing.record.path)
   expect(listed).not.toContain(healthy.record.path)
+})
+
+// A nested workspace's source is its parent's worktree folder. With that folder deleted by hand, release spawned
+// git in it (ENOENT) and aborted before reaching the remaining workspaces.
+it('releases nested workspaces whose source folder was deleted, keeping the ones with work', async () => {
+  const { source, service, workspace } = await fixture()
+  await writeFile(join(source, '.gitignore'), '.vite/\n')
+  const parent = await workspace()
+  const cacheOnly = await workspace(parent.record.path)
+  const withWork = await workspace(parent.record.path)
+  const healthy = await workspace()
+  await rm(parent.record.path, { recursive: true })
+  await rm(cacheOnly.record.path, { recursive: true })
+  await mkdir(join(cacheOnly.record.path, '.vite'), { recursive: true })
+  await rm(withWork.record.path, { recursive: true })
+  await mkdir(withWork.record.path)
+  await writeFile(join(withWork.record.path, 'notes.txt'), 'unsaved')
+  const kept = await service.release([parent.id, cacheOnly.id, withWork.id, healthy.id], context)
+  expect(kept.map((item) => item.id).toSorted((a, b) => a - b)).toEqual(
+    [parent.id, withWork.id].toSorted((a, b) => a - b),
+  )
+  expect(kept.find((item) => item.id === withWork.id)!.reason).toContain('not ignored')
+  expect((await service.get(cacheOnly.id, context))!.state).toBe('removed')
+  expect(await stat(cacheOnly.record.path).catch(() => undefined)).toBeUndefined()
+  expect(await readFile(join(withWork.record.path, 'notes.txt'), 'utf8')).toBe('unsaved')
+  expect((await service.get(healthy.id, context))!.state).toBe('removed')
+  expect(await stat(healthy.record.path).catch(() => undefined)).toBeUndefined()
 })

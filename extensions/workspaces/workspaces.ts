@@ -179,13 +179,11 @@ async function listedBySource(workspace: WorkspaceIndex['items'][string]) {
     .split('\n\n')
     .some((entry) => entry.split('\n').includes(`worktree ${workspace.path}`))
 }
-async function onlyIgnored(workspace: WorkspaceIndex['items'][string]) {
+async function onlyIgnored(workspace: WorkspaceIndex['items'][string], repo: string) {
   const entries = await readdir(workspace.path, { withFileTypes: true })
   if (!entries.length) return true
   const paths = entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
-  const ignored = await git(workspace.source, 'check-ignore', '--no-index', '--', ...paths).catch(
-    () => '',
-  )
+  const ignored = await git(repo, 'check-ignore', '--no-index', '--', ...paths).catch(() => '')
   const matched = new Set(ignored.split('\n'))
   return paths.every((path) => matched.has(path))
 }
@@ -489,6 +487,24 @@ export function workspaces(host: Host) {
     if (potentiallyForeignFolder) return undefined
     return { workspace, registered }
   }
+  async function orphanedWork(
+    id: ConversationId,
+    workspace: WorkspaceIndex['items'][string],
+  ): Promise<KeptWork> {
+    try {
+      if (await onDisk(join(workspace.path, '.git')))
+        return { id, ...(await workLostWithCheckout(workspace)) }
+      if (await onlyIgnored(workspace, host.projectRoot)) return { id, uncommitted: 0, unlanded: 0 }
+      return {
+        id,
+        uncommitted: 0,
+        unlanded: 0,
+        reason: `Source folder is gone and ${workspace.path} holds files that are not ignored`,
+      }
+    } catch (error) {
+      return { id, uncommitted: 0, unlanded: 0, reason: failure(error) }
+    }
+  }
   async function progress(ids: ConversationId[], context: Context): Promise<KeptWork[]> {
     const result = await Promise.all(
       ids.map(async (id) => {
@@ -536,7 +552,7 @@ export function workspaces(host: Host) {
           treeName(workspace.branch),
         )
       } else if (await onDisk(workspace.path)) {
-        if (!(await onlyIgnored(workspace)))
+        if (!(await onlyIgnored(workspace, workspace.source)))
           throw new Error(`Workspace path is not a registered checkout: ${workspace.path}`)
         await rm(workspace.path, { recursive: true, force: true })
       }
@@ -580,57 +596,64 @@ export function workspaces(host: Host) {
       const record = await get(id, context)
       if (!record) continue
       await serializeSourceWrites(record.source, async () => {
-        if (signal?.aborted) return
-        const workspace = (await get(id, context))!
-        if (workspace.state === 'preparing') {
-          kept.push({ id, uncommitted: 0, unlanded: 0, busy: 'Workspace is preparing' })
-          return
-        }
-        const checkout = await recordedCheckout(id, context)
-        const present = Boolean(checkout)
-        const registered = Boolean(checkout?.registered)
-        const item: KeptWork = present
-          ? await workHeldByRegisteredCheckout(id, workspace, registered)
-          : { id, uncommitted: 0, unlanded: 0 }
-        if (retained.has(id)) item.descendant = retained.get(id)
-        const reason = await host.harness().commit(async (tx) => {
-          const live = await tx.doc(LiveDoc, id)
-          const inbox = await tx.doc(InboxDoc, id)
-          const index = await tx.doc(Workspaces, ROOT_CONVERSATION_ID)
-          if (live.run) return 'Conversation is running; wait or stop it before removal'
-          if (inbox.items.length) return 'Conversation has queued input; wait or cancel it first'
-          const sources = new Set([workspace.path])
-          let size: number
-          do {
-            size = sources.size
-            for (const [child, descendant] of Object.entries(index.items)) {
-              if (!sources.has(descendant.source)) continue
-              sources.add(descendant.path)
-              if (descendant.state !== 'removed') item.descendant = Number(child)
-            }
-          } while (size !== sources.size)
-          if (!item.uncommitted && !item.unlanded && !item.reason && !item.descendant)
-            index.items[String(id)].state = 'removed'
-          else if (registered && index.items[String(id)].state === 'removed')
-            index.items[String(id)].state = 'ready'
-          return undefined
-        }, context)
-        if (reason) item.busy = reason
-        if (item.uncommitted || item.unlanded || item.reason || item.busy || item.descendant) {
-          kept.push(item)
-          return
-        }
-        if (
-          !present &&
-          !(await lstat(workspace.source).catch((error: NodeJS.ErrnoException) => {
-            if (error.code !== 'ENOENT') throw error
+        try {
+          if (signal?.aborted) return
+          const workspace = (await get(id, context))!
+          if (workspace.state === 'preparing') {
+            kept.push({ id, uncommitted: 0, unlanded: 0, busy: 'Workspace is preparing' })
+            return
+          }
+          const sourceGone = !(await onDisk(workspace.source))
+          const checkout = sourceGone
+            ? await presentCheckout(id, context).then(
+                (present) => present && { workspace: present, registered: false },
+              )
+            : await recordedCheckout(id, context)
+          const present = Boolean(checkout)
+          const registered = Boolean(checkout?.registered)
+          const clean: KeptWork = { id, uncommitted: 0, unlanded: 0 }
+          const item: KeptWork = !present
+            ? clean
+            : sourceGone
+              ? await orphanedWork(id, workspace)
+              : await workHeldByRegisteredCheckout(id, workspace, registered)
+          if (retained.has(id)) item.descendant = retained.get(id)
+          const reason = await host.harness().commit(async (tx) => {
+            const live = await tx.doc(LiveDoc, id)
+            const inbox = await tx.doc(InboxDoc, id)
+            const index = await tx.doc(Workspaces, ROOT_CONVERSATION_ID)
+            if (live.run) return 'Conversation is running; wait or stop it before removal'
+            if (inbox.items.length) return 'Conversation has queued input; wait or cancel it first'
+            const sources = new Set([workspace.path])
+            let size: number
+            do {
+              size = sources.size
+              for (const [child, descendant] of Object.entries(index.items)) {
+                if (!sources.has(descendant.source)) continue
+                sources.add(descendant.path)
+                if (descendant.state !== 'removed') item.descendant = Number(child)
+              }
+            } while (size !== sources.size)
+            if (!item.uncommitted && !item.unlanded && !item.reason && !item.descendant)
+              index.items[String(id)].state = 'removed'
+            else if (registered && index.items[String(id)].state === 'removed')
+              index.items[String(id)].state = 'ready'
             return undefined
-          }))
-        )
-          return
-        if (present && !registered) await rm(workspace.path, { recursive: true, force: true })
-        const remaining = await finishRemoval(id, workspace, context)
-        if (remaining) kept.push(remaining)
+          }, context)
+          if (reason) item.busy = reason
+          if (item.uncommitted || item.unlanded || item.reason || item.busy || item.descendant) {
+            kept.push(item)
+            return
+          }
+          if (present && !registered) await rm(workspace.path, { recursive: true, force: true })
+          if (sourceGone) return
+          const remaining = await finishRemoval(id, workspace, context)
+          if (remaining) kept.push(remaining)
+        } catch (error) {
+          const reason = failure(error)
+          host.notice(`Workspace release failed for conversation ${id}: ${reason}`)
+          kept.push({ id, uncommitted: 0, unlanded: 0, reason })
+        }
       })
       if (kept.some((item) => item.id === id))
         for (
