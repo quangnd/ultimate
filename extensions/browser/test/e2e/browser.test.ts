@@ -299,3 +299,34 @@ it('saves screenshots at the given path, relative to the conversation cwd, creat
     await removeTemp(directory)
   }
 })
+
+// An SDK step on a project's own app waited the whole 30 s step timeout for a window.ultimate that never comes.
+it('fails an SDK step on a page that is not an Ultimate UI at once, naming the steps to use instead', async () => {
+  const directory = await temp('ultimate-browser-plain-')
+  const closers: (() => Promise<void>)[] = []
+  const host = {
+    home: join(directory, 'home'),
+    projectRoot: directory,
+    resource: <T>(_name: string, create: () => T) => create(),
+    onClose: (close: () => Promise<void>) => closers.push(close),
+    system: () => ({ process: { url: 'http://127.0.0.1:1/' } }),
+  } as unknown as ExtensionHost
+  const browser = browserExtension(host).tools!.find((tool) => tool.name === 'browser')!
+  const api = { output() {} } as unknown as ToolExecutionApi
+  try {
+    for (const step of [{ ui: 'snapshot' }, { until: 'idle' }]) {
+      const started = Date.now()
+      const result = await browser.execute(
+        { url: 'data:text/html,<title>App</title>', steps: [step], screenshot: false },
+        api,
+        context,
+      )
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.output)).toContain('This page is not an Ultimate UI')
+      expect(Date.now() - started).toBeLessThan(10_000)
+    }
+  } finally {
+    for (const close of closers) await close()
+    await removeTemp(directory)
+  }
+})

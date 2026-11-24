@@ -330,8 +330,16 @@ export default function browserExtension(host: ExtensionHost) {
                 else if ('press' in step) await guard(page.keyboard.press(step.press))
                 else if ('wait' in step) await one(step.wait, page.locator(step.wait).waitFor())
                 else if ('send' in step || 'until' in step || 'ui' in step) {
-                  const waitForLoadedSdk = () =>
-                    guard(
+                  const waitForLoadedSdk = async () => {
+                    if (
+                      !(await guard(
+                        page.evaluate(() => !!document.querySelector('meta[name=ultimate-web]')),
+                      ))
+                    )
+                      throw new Error(
+                        'This page is not an Ultimate UI (no window.ultimate); use click/fill/press/wait/eval steps instead',
+                      )
+                    await guard(
                       page
                         .waitForFunction(() => 'ultimate' in window)
                         .catch(() => {
@@ -340,6 +348,7 @@ export default function browserExtension(host: ExtensionHost) {
                           )
                         }),
                     )
+                  }
                   await waitForLoadedSdk()
                   if ('ui' in step) {
                     const outcome = await guard(
