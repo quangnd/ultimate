@@ -518,7 +518,10 @@ export function workspaces(host: Host) {
   ) {
     let item: KeptWork = { id, uncommitted: 0, unlanded: 0 }
     try {
-      if (await listedBySource(workspace)) {
+      const registered = await listedBySource(workspace)
+      if (registered && !(await onDisk(workspace.path))) {
+        await git(workspace.source, 'worktree', 'prune')
+      } else if (registered) {
         item = { id, ...(await workLostWithCheckout(workspace)) }
         if (item.uncommitted || item.unlanded) {
           await host.harness().commit(async (tx) => {

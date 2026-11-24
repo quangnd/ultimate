@@ -161,9 +161,12 @@ export default function workspaceExtension(host: ExtensionHost) {
     const releasing = conversations
       .concluded(context)
       .then((ids) => service.release([...ids], context, signal))
-      .then(() => service.sweep(context, signal))
       .catch((error: unknown) => {
         host.notice(`Workspace release failed: ${String(error)}`)
+      })
+      .then(() => service.sweep(context, signal))
+      .catch((error: unknown) => {
+        host.notice(`Workspace sweep failed: ${String(error)}`)
       })
     opened.defer(async () => {
       releaseController.abort()
