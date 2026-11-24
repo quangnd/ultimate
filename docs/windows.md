@@ -1,6 +1,6 @@
 # Ultimate on Windows (native, phase 0)
 
-This is the install and first-run guide for running Ultimate directly on Windows 11 (no WSL, no admin rights). It is a first port: the core works, several features are switched off. A GitHub Actions job (`.github/workflows/windows.yml`) runs the same smoke test on a Windows runner on every push, so a break shows up there first. The smoke starts Ultimate, leaves a browser tab open, adds the `hello` extension, restarts and expects the tab to show it.
+This is the install and first-run guide for running Ultimate directly on Windows 11 (no WSL, no admin rights). It is a first port: the core works, several features are switched off. A GitHub Actions job (`.github/workflows/windows.yml`) runs the same smoke test on a Windows runner, started by hand only (`workflow_dispatch`); it is not a gate for pushes or upstream syncs. The smoke starts Ultimate, leaves a browser tab open, adds the `hello` extension, restarts and expects the tab to show it.
 
 ## What works and what does not (phase 0)
 
