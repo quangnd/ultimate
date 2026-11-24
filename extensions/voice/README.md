@@ -5,7 +5,7 @@ Voice input: a mic button beside Send records speech and puts its transcript int
 - **Tap to record, tap to stop**, or `mod+alt+v` (the `voice.toggle` command; ⌘⌥V on a Mac): the shortcut drives the
   same recorder the button does, works while typing in the composer, and is hidden where no composer offers voice. While
   recording the button becomes Cancel, an elapsed clock with a level meter, Done (✓), and Send (↑); the composer's own
-  The composer's own Send hides meanwhile, so Send is the only arrow. Escape cancels while
+  Send hides meanwhile, so Send is the only arrow. Escape cancels while
   idle, and Enter sends (only in that conversation's own composer). Done transcribes and inserts the text at the
   cursor, unsent, for editing, so a busy conversation steers or queues it like typed text once sent. Send does the
   same, then runs the composer's own Send (any existing draft text goes with it, exactly as pressing Send after Done
