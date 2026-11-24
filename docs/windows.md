@@ -57,6 +57,8 @@ Ultimate runs on its own repository, opens your default browser at `http://127.0
 
 State (conversations, settings, the web bundle) lives in `%USERPROFILE%\.ultimate`. Pi shares `%USERPROFILE%\.pi\agent` for logins and models.
 
+If you only run Ultimate from its own clone (as on a work laptop), answer **Keep global** on the "Use this project's setup?" card. That card turns on the clone's development setup: the review team and a lander that pushes to `origin`.
+
 To work on another project, give its folder as the first argument: `node C:\ult\bin\ultimate.ts C:\work\my-repo`. Your user extensions in `%USERPROFILE%\.ultimate\extensions` load for every project; a project's own `.ultimate\extensions` loads once you choose that project in Ultimate.
 
 ## Log in to a model

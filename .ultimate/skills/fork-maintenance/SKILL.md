@@ -36,9 +36,11 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
    - upstream restructured the area: re-port our intent onto the new code;
    - unrelated: keep both;
    - unsure: ask the user with a card, naming the memory and the two options.
-3. Expected conflict spots: `extensions/voice/` (`web.tsx`, `server.ts`, `refs.ts`, README and tests: the voice shortcut
+3. Expected conflict spots: `extensions/voice/` (`web.solid.tsx`, `button.solid.tsx`, `server.ts`, `refs.ts`, README and tests: the voice shortcut
    `mod+alt+v` with the `voice.shortcut` user setting, and Send; upstream declined PR #195, so this carry is permanent;
-   upstream also edits voice's imports and README, so merge those into our version). In
+   upstream also edits voice's imports and README, so merge those into our version). A personal or project facet still
+   written in React (`web.tsx`) shows an error card after a merge: move it with `extensions/README.md` "Moving a React
+   facet to Solid". In
    `.ultimate/settings.json`, keep `lander.checks` as ours: the machine sets those numbers (`diverge-lander-checks`).
    Keep `modelFamilies` as ours too unless `ultimate.models()` lists the models upstream names: a merge once moved
    review and fast to `gpt-6.2-*`, which this machine's catalog does not have.
@@ -62,14 +64,20 @@ A change that reworks or drops an earlier divergence says which `diverge-*` memo
 ## Before you submit (pre-flight)
 
 The lander reads `lander.checks` from the host checkout's `.ultimate/settings.json` (main), never from your branch. A
-change to that block on your branch does nothing for your own landing: ask @ultimate to commit it on main first.
+change to that block on your branch does nothing for your own landing: ask @ultimate to commit it on main first, then
+merge main into your branch.
+
+Main's checks are two commands: `pnpm check` (120 s), then `VITEST_MAX_WORKERS=4 pnpm test:affected` (1500 s).
+`test:affected` takes only a base argument, so a reporter flag such as `--reporter=verbose` cannot be passed to it
+(`scripts/test.ts`). A sync, and any change under `lib/`, `server/` or `shared/`, runs both whole suites inside that
+one check.
 
 1. Compare main's checks with yours: `git -C <host clone> show HEAD:.ultimate/settings.json` against your copy. If
    they differ, merge main into your branch before submitting, or the lander's own merge conflicts on that block.
 2. Check the load: `uptime`. This machine idles around 30 (WindowServer, Chrome). Submit only when the 1-minute load
    is below 35 and `mds_stores` is quiet (`ps -Ao pcpu,comm -r | grep mds_stores`).
-3. Run the e2e tests of every file you resolved by hand (`pnpm test:e2e <path>`). The lander runs the full suite
-   anyway, but a real failure then shows up here first.
+3. Run `pnpm test:affected` yourself before submitting, and the e2e tests of every file you resolved by hand
+   (`pnpm test:e2e <path>`), so a real failure shows up here first.
 
 ## When the lander rejects
 
@@ -77,10 +85,14 @@ After the first rejection, read the lander's failing output (lander conversation
 its verdict, and decide which kind it is:
 
 - **A test fails on an assertion** in an area the merge touched: a real failure. Fix it.
-- **Timeouts or hook timeouts in tests the merge did not touch**, a different set each run: load. Run one failing
-  test alone on your tree and on main. If it passes alone on both, resubmit once when the load is below 35.
-- **`Stalled: no output for 2 min`**: the stall guard stopped a silent run. Check that main's e2e command still has
-  `--reporter=verbose`.
+- **Timeouts or hook timeouts in tests the merge did not touch**: possibly load, but only provisionally. Run one
+  failing test alone on your branch and on main. It counts as load only if it passes alone on both; then resubmit once
+  when the load is below 35. If it fails alone, it is one of the other causes seen so far:
+  - a branch setting the lander ignores (the lander uses main's `lander.checks`, not yours);
+  - the 120 s stall guard (`Stalled: no output for 2 min`): a silent run was stopped, so look for a test or check that
+    prints nothing for two minutes;
+  - a total-time cap: the check hit its `timeout` while tests were still passing (raise it on main, not on the branch);
+  - a platform-only test bug, such as a shortcut test that presses `Control+k` where macOS needs `mod+k`.
 
 After two rejections, stop. Report to @ultimate with the failing tests, the load at the time, and the kind above. Do
 not change the lander settings or resubmit until it answers.
