@@ -9,6 +9,7 @@ import {
   events,
   formatKeys,
   insertIntoComposer,
+  ROOT,
   useAction,
   useConversationId,
   useEvent,
@@ -68,7 +69,7 @@ function submitComposerAfterRender(id: ConversationId) {
 const recordingMimeOrder = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
 const barShapes = [0.55, 1, 0.8, 0.45]
 const buttonSize = 'size-7 rounded-lg pointer-coarse:size-9'
-const hideWhileRecording = `[data-ui="composer"]:has([data-voice-recording]) :is(button[type="submit"], [data-voice-live]) { display: none }`
+const hideWhileRecording = `[data-ui="composer"]:has([data-voice-recording]) button[type="submit"] { display: none }`
 const keepEditorFocus = (event: PointerEvent) => event.preventDefault()
 
 type Recording = {
@@ -149,8 +150,8 @@ function Level(props: { recording: Recording }) {
 
 export function VoiceButton() {
   const id = useConversationId()
-  const status = useAction(StatusAction)
-  const shortcut = useAction(ShortcutAction)
+  const status = useAction(StatusAction, null, { conversation: ROOT })
+  const shortcut = useAction(ShortcutAction, null, { conversation: ROOT })
   const chosenShortcut = () => shortcut.data() ?? defaultShortcut
   useEvent('secrets:changed', () => void status.refetch())
   const unavailable = unsupported()

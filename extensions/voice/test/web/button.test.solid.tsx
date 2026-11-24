@@ -362,7 +362,7 @@ it('hides the composer’s own Send and the live voice button while recording', 
   await press('Voice input')
   const bar = container.querySelector('[data-voice-recording]')
   expect(bar?.querySelector('style')?.textContent).toBe(
-    '[data-ui="composer"]:has([data-voice-recording]) :is(button[type="submit"], [data-voice-live]) { display: none }',
+    '[data-ui="composer"]:has([data-voice-recording]) button[type="submit"] { display: none }',
   )
 })
 

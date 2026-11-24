@@ -5,7 +5,7 @@ Voice input: a mic button beside Send records speech and puts its transcript int
 - **Tap to record, tap to stop**, or `mod+alt+v` (the `voice.toggle` command; ⌘⌥V on a Mac): the shortcut drives the
   same recorder the button does, works while typing in the composer, and is hidden where no composer offers voice. While
   recording the button becomes Cancel, an elapsed clock with a level meter, Done (✓), and Send (↑); the composer's own
-  Send and the voice-live button hide meanwhile, so Send is the only arrow. Escape cancels while
+  The composer's own Send hides meanwhile, so Send is the only arrow. Escape cancels while
   idle, and Enter sends (only in that conversation's own composer). Done transcribes and inserts the text at the
   cursor, unsent, for editing, so a busy conversation steers or queues it like typed text once sent. Send does the
   same, then runs the composer's own Send (any existing draft text goes with it, exactly as pressing Send after Done
@@ -16,7 +16,7 @@ Voice input: a mic button beside Send records speech and puts its transcript int
   URL or localhost.
 - **Transcription** is the `transcribe` action (`{ audio: base64, mimeType }` → `{ text }`), which posts the audio to
   OpenAI's documented `https://api.openai.com/v1/audio/transcriptions` with `gpt-4o-mini-transcribe`
-  (`openaiTranscribe` in `server.ts` is the one place that knows the endpoint). Recordings up to 8 MB are accepted.
+  (`openaiTranscribe` in `lib/openai.ts` is the one place that knows the endpoint). Recordings up to 8 MB are accepted.
 - **Key:** the `OPENAI_API_KEY` secret (⌘K → Secrets), else an API key Pi's `openai` provider holds. The key is never
   logged or returned. Without one, `status` answers `{ available: false, reason }`, the button is dimmed, and tapping it
   opens the secret's row in the Secrets panel.
